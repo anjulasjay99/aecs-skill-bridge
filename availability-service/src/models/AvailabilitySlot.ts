@@ -15,7 +15,6 @@ export interface IAvailabilitySlot extends Document {
 const AvailabilitySlotSchema = new Schema<IAvailabilitySlot>({
     mentorId: {
         type: Schema.Types.ObjectId,
-        ref: "User",
         required: true,
         index: true,
     },
@@ -49,7 +48,6 @@ const AvailabilitySlotSchema = new Schema<IAvailabilitySlot>({
     },
     bookingId: {
         type: Schema.Types.ObjectId,
-        ref: "Booking",
         default: null,
     },
     createdAt: {
