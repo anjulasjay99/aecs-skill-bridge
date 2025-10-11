@@ -12,7 +12,7 @@ Parameters:
 
 Resources:
     # =======================================================
-    # Networking - VPC, Subnet, Internet Gateway, Route Table
+    # Networking - VPC, Subnets (2x AZ), IGW, Route Table
     # =======================================================
     VPC:
         Type: AWS::EC2::VPC
@@ -24,6 +24,7 @@ Resources:
                 - Key: Name
                   Value: SkillBridgeVPC
 
+    # Public subnet in AZ-0
     PublicSubnetA:
         Type: AWS::EC2::Subnet
         Properties:
@@ -34,6 +35,27 @@ Resources:
             Tags:
                 - Key: Name
                   Value: SkillBridgePublicSubnetA
+                # Helpful for k8s Service type=LoadBalancer
+                - Key: kubernetes.io/role/elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: shared
+
+    # Public subnet in AZ-1
+    PublicSubnetB:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: 10.10.2.0/24
+            MapPublicIpOnLaunch: true
+            AvailabilityZone: !Select [1, !GetAZs ""]
+            Tags:
+                - Key: Name
+                  Value: SkillBridgePublicSubnetB
+                - Key: kubernetes.io/role/elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: shared
 
     InternetGateway:
         Type: AWS::EC2::InternetGateway
@@ -48,7 +70,7 @@ Resources:
             VpcId: !Ref VPC
             InternetGatewayId: !Ref InternetGateway
 
-    RouteTable:
+    PublicRouteTable:
         Type: AWS::EC2::RouteTable
         Properties:
             VpcId: !Ref VPC
@@ -60,15 +82,21 @@ Resources:
         Type: AWS::EC2::Route
         DependsOn: AttachIGW
         Properties:
-            RouteTableId: !Ref RouteTable
+            RouteTableId: !Ref PublicRouteTable
             DestinationCidrBlock: 0.0.0.0/0
             GatewayId: !Ref InternetGateway
 
-    PublicSubnetRouteTableAssociation:
+    PublicSubnetARouteTableAssociation:
         Type: AWS::EC2::SubnetRouteTableAssociation
         Properties:
             SubnetId: !Ref PublicSubnetA
-            RouteTableId: !Ref RouteTable
+            RouteTableId: !Ref PublicRouteTable
+
+    PublicSubnetBRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PublicSubnetB
+            RouteTableId: !Ref PublicRouteTable
 
     # =======================================================
     # IAM Roles
@@ -116,6 +144,9 @@ Resources:
             ResourcesVpcConfig:
                 SubnetIds:
                     - !Ref PublicSubnetA
+                    - !Ref PublicSubnetB
+                EndpointPublicAccess: true
+                EndpointPrivateAccess: false
 
     EKSNodeGroup:
         Type: AWS::EKS::Nodegroup
@@ -125,6 +156,7 @@ Resources:
             NodeRole: !GetAtt NodeInstanceRole.Arn
             Subnets:
                 - !Ref PublicSubnetA
+                - !Ref PublicSubnetB
             ScalingConfig:
                 MinSize: 1
                 DesiredSize: 1
@@ -136,7 +168,7 @@ Resources:
                 Name: SkillBridgeNodeGroup
 
     # =======================================================
-    # ECR Repositories
+    # ECR Repositories (retained between stack cycles)
     # =======================================================
     ECRUserService:
         Type: AWS::ECR::Repository
@@ -199,8 +231,8 @@ Outputs:
         Export:
             Name: SkillBridge:VpcId
 
-    PublicSubnetId:
-        Description: ID of the public subnet
-        Value: !Ref PublicSubnetA
+    PublicSubnetIds:
+        Description: Comma-delimited list of public subnet IDs (two AZs)
+        Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
         Export:
-            Name: SkillBridge:PublicSubnetId
+            Name: SkillBridge:PublicSubnetIds
