@@ -67,6 +67,52 @@ jobs:
                     echo "⚠️ API Gateway stack not found. Skipping."
                   fi
 
+            - name: 🧽 Clean Up Public IPs Before IGW Detach
+              continue-on-error: true
+              run: |
+                  echo "🧽 Cleaning up public IP dependencies for SkillBridge VPC..."
+                  VPC_ID=$(aws ec2 describe-vpcs \
+                    --filters Name=tag:Name,Values=SkillBridgeVPC \
+                    --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION || echo "None")
+
+                  if [ "$VPC_ID" = "None" ]; then
+                    echo "⚠️ No SkillBridgeVPC found. Skipping."
+                    exit 0
+                  fi
+
+                  # Delete NAT Gateways
+                  NAT_IDS=$(aws ec2 describe-nat-gateways \
+                    --filter Name=vpc-id,Values=$VPC_ID \
+                    --query "NatGateways[].NatGatewayId" --output text --region $AWS_REGION || echo "")
+                  for NAT in $NAT_IDS; do
+                    echo "🗑️ Deleting NAT Gateway: $NAT"
+                    aws ec2 delete-nat-gateway --nat-gateway-id $NAT --region $AWS_REGION || true
+                  done
+
+                  # Wait for NAT deletion
+                  echo "⏳ Waiting for NAT gateways to be deleted..."
+                  sleep 30
+
+                  # Release Elastic IPs
+                  ALLOC_IDS=$(aws ec2 describe-addresses \
+                    --filters Name=domain,Values=vpc \
+                    --query "Addresses[].AllocationId" --output text --region $AWS_REGION || echo "")
+                  for AID in $ALLOC_IDS; do
+                    echo "🪓 Releasing Elastic IP: $AID"
+                    aws ec2 release-address --allocation-id $AID --region $AWS_REGION || true
+                  done
+
+                  # Delete ENIs with public IPs
+                  ENI_IDS=$(aws ec2 describe-network-interfaces \
+                    --filters Name=vpc-id,Values=$VPC_ID \
+                    --query "NetworkInterfaces[?Association.PublicIp!=null].NetworkInterfaceId" --output text --region $AWS_REGION || echo "")
+                  for ENI in $ENI_IDS; do
+                    echo "🧹 Deleting ENI with public IP: $ENI"
+                    aws ec2 delete-network-interface --network-interface-id $ENI --region $AWS_REGION || true
+                  done
+
+                  echo "✅ Public IP cleanup complete. IGW should now be safe to detach."
+
             - name: 🪓 Pre-detach Internet Gateway (prevent NotStabilized)
               continue-on-error: true
               run: |
