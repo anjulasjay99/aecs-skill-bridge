@@ -140,6 +140,8 @@ Resources:
     # =======================================================
     ECRUserService:
         Type: AWS::ECR::Repository
+        DeletionPolicy: Retain
+        UpdateReplacePolicy: Retain
         Properties:
             RepositoryName: user-service
             ImageScanningConfiguration:
@@ -150,6 +152,8 @@ Resources:
 
     ECRBookingService:
         Type: AWS::ECR::Repository
+        DeletionPolicy: Retain
+        UpdateReplacePolicy: Retain
         Properties:
             RepositoryName: booking-service
             ImageScanningConfiguration:
@@ -160,6 +164,8 @@ Resources:
 
     ECRAvailabilityService:
         Type: AWS::ECR::Repository
+        DeletionPolicy: Retain
+        UpdateReplacePolicy: Retain
         Properties:
             RepositoryName: availability-service
             ImageScanningConfiguration:
@@ -170,6 +176,8 @@ Resources:
 
     ECRSearchService:
         Type: AWS::ECR::Repository
+        DeletionPolicy: Retain
+        UpdateReplacePolicy: Retain
         Properties:
             RepositoryName: search-service
             ImageScanningConfiguration:

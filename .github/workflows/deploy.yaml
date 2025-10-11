@@ -74,20 +74,20 @@ jobs:
                     echo "✅ Stack status is $STATUS — no cleanup needed."
                   fi
 
-            - name: 🧰 Ensure ECR Repositories Exist
-              run: |
-                  set -e
-                  declare -a repos=("user-service" "booking-service" "availability-service" "search-service")
-                  for repo in "${repos[@]}"; do
-                    echo "🧩 Checking ECR repo: $repo"
-                    if aws ecr describe-repositories --repository-names $repo --region $AWS_REGION >/dev/null 2>&1; then
-                      echo "✅ Repository '$repo' already exists."
-                    else
-                      echo "🚀 Creating ECR repository '$repo'..."
-                      aws ecr create-repository --repository-name $repo --region $AWS_REGION
-                    fi
-                  done
-                  echo "✅ All ECR repositories are ready."
+            # - name: 🧰 Ensure ECR Repositories Exist
+            #   run: |
+            #       set -e
+            #       declare -a repos=("user-service" "booking-service" "availability-service" "search-service")
+            #       for repo in "${repos[@]}"; do
+            #         echo "🧩 Checking ECR repo: $repo"
+            #         if aws ecr describe-repositories --repository-names $repo --region $AWS_REGION >/dev/null 2>&1; then
+            #           echo "✅ Repository '$repo' already exists."
+            #         else
+            #           echo "🚀 Creating ECR repository '$repo'..."
+            #           aws ecr create-repository --repository-name $repo --region $AWS_REGION
+            #         fi
+            #       done
+            #       echo "✅ All ECR repositories are ready."
 
             - name: ☁️ Deploy CloudFormation (VPC + EKS + ECR)
               run: |
