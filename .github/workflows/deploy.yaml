@@ -38,6 +38,42 @@ jobs:
                     --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
                   echo "✅ Docker authenticated with ECR."
 
+            - name: 🧹 Clean Up Failed or Stuck Stacks
+              run: |
+                  echo "🔍 Checking current CloudFormation stack status for: $STACK_NAME ..."
+                  STATUS=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_NAME --region $AWS_REGION \
+                    --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NONE")
+
+                  echo "ℹ️ Stack status detected: $STATUS"
+
+                  # Match any rollback, delete failed, or create failed state
+                  if [[ "$STATUS" =~ "ROLLBACK" || "$STATUS" =~ "DELETE_FAILED" || "$STATUS" == "CREATE_FAILED" ]]; then
+                    echo "⚠️ Stack $STACK_NAME is in a failed state ($STATUS). Preparing cleanup..."
+                    
+                    echo "🧾 Recent failure reasons:"
+                    aws cloudformation describe-stack-events \
+                      --stack-name $STACK_NAME \
+                      --region $AWS_REGION \
+                      --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
+                      --output table || echo "⚠️ Unable to retrieve stack events."
+
+                    echo "🧨 Deleting stuck stack..."
+                    aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION || true
+                    echo "⏳ Waiting for stack deletion to complete..."
+                    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
+                    echo "✅ Cleanup complete. Stack deleted or fully cleared."
+
+                  elif [[ "$STATUS" == "DELETE_IN_PROGRESS" || "$STATUS" == "CREATE_IN_PROGRESS" ]]; then
+                    echo "⏳ Stack is currently in progress ($STATUS). Waiting 30 seconds..."
+                    sleep 30
+                    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
+                    echo "✅ Stack deletion finished after wait."
+
+                  else
+                    echo "✅ Stack status is $STATUS — no cleanup needed."
+                  fi
+
             - name: 🧰 Ensure ECR Repositories Exist
               run: |
                   set -e
@@ -52,21 +88,6 @@ jobs:
                     fi
                   done
                   echo "✅ All ECR repositories are ready."
-
-            - name: 🧹 Clean Up Failed or Stuck Stacks
-              run: |
-                  STATUS=$(aws cloudformation describe-stacks \
-                    --stack-name $STACK_NAME --region $AWS_REGION \
-                    --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NONE")
-
-                  if [[ "$STATUS" == "ROLLBACK_COMPLETE" || "$STATUS" == "ROLLBACK_FAILED" ]]; then
-                    echo "⚠️ Stack $STACK_NAME is in $STATUS. Deleting..."
-                    aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION || true
-                    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
-                    echo "✅ Deleted stuck stack $STACK_NAME"
-                  else
-                    echo "ℹ️ Stack status is $STATUS — continuing"
-                  fi
 
             - name: ☁️ Deploy CloudFormation (VPC + EKS + ECR)
               run: |
