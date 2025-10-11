@@ -35,7 +35,6 @@ Resources:
             Tags:
                 - Key: Name
                   Value: SkillBridgePublicSubnetA
-                # Helpful for k8s Service type=LoadBalancer
                 - Key: kubernetes.io/role/elb
                   Value: "1"
                 - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
@@ -64,8 +63,15 @@ Resources:
                 - Key: Name
                   Value: SkillBridgeIGW
 
+    # Attach IGW to VPC (explicit dependency ordering for delete stability)
     AttachIGW:
         Type: AWS::EC2::VPCGatewayAttachment
+        DependsOn:
+            - PublicSubnetARouteTableAssociation
+            - PublicSubnetBRouteTableAssociation
+            - DefaultRoute
+            - EKSNodeGroup
+            - EKSCluster
         Properties:
             VpcId: !Ref VPC
             InternetGatewayId: !Ref InternetGateway

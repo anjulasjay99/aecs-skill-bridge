@@ -12,6 +12,9 @@ jobs:
     destroy:
         runs-on: ubuntu-latest
         steps:
+            - name: 🧾 Checkout Repository
+              uses: actions/checkout@v4
+
             - name: ⚙️ Configure AWS Credentials
               uses: aws-actions/configure-aws-credentials@v4
               with:
@@ -36,10 +39,17 @@ jobs:
               continue-on-error: true
               run: |
                   echo "🧨 Deleting Kubernetes resources if they exist..."
-                  kubectl delete -f k8s/edge-nginx-deployment.yaml --ignore-not-found
-                  kubectl delete -f k8s/edge-nginx-configmap.yaml --ignore-not-found
-                  sed "s|\${AWS_ACCOUNT_ID}|${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/services-deployments.yaml | kubectl delete -f - --ignore-not-found
-                  kubectl delete -f k8s/namespace.yaml --ignore-not-found
+                  cd $GITHUB_WORKSPACE
+                  if [ -d "k8s" ]; then
+                    kubectl delete -f k8s/edge-nginx-deployment.yaml --ignore-not-found || echo "⚠️ Missing edge-nginx-deployment.yaml"
+                    kubectl delete -f k8s/edge-nginx-configmap.yaml --ignore-not-found || echo "⚠️ Missing edge-nginx-configmap.yaml"
+                    if [ -f k8s/services-deployments.yaml ]; then
+                      sed "s|\${AWS_ACCOUNT_ID}|${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/services-deployments.yaml | kubectl delete -f - --ignore-not-found
+                    fi
+                    kubectl delete -f k8s/namespace.yaml --ignore-not-found || true
+                  else
+                    echo "⚠️ No k8s/ directory found. Skipping Kubernetes cleanup."
+                  fi
                   echo "✅ K8s cleanup attempted (ignored missing resources)."
 
             - name: 🌐 Delete API Gateway Stack
@@ -57,21 +67,67 @@ jobs:
                     echo "⚠️ API Gateway stack not found. Skipping."
                   fi
 
+            - name: 🪓 Pre-detach Internet Gateway (prevent NotStabilized)
+              continue-on-error: true
+              run: |
+                  echo "🧭 Searching for Internet Gateway attached to SkillBridge VPC..."
+                  IGW_ID=$(aws ec2 describe-internet-gateways \
+                    --filters Name=tag:Name,Values=SkillBridgeIGW \
+                    --query 'InternetGateways[0].InternetGatewayId' --output text --region $AWS_REGION || echo "None")
+                  VPC_ID=$(aws ec2 describe-vpcs \
+                    --filters Name=tag:Name,Values=SkillBridgeVPC \
+                    --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION || echo "None")
+
+                  if [ "$IGW_ID" != "None" ] && [ "$VPC_ID" != "None" ]; then
+                    echo "🪓 Detaching IGW ($IGW_ID) from VPC ($VPC_ID)..."
+                    aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region $AWS_REGION || true
+                    sleep 10
+                    echo "✅ Detachment command issued successfully."
+                  else
+                    echo "⚠️ IGW or VPC not found — nothing to detach."
+                  fi
+
             - name: 🧱 Delete Core CloudFormation Stack
               run: |
                   echo "🧱 Checking for core stack: $STACK_NAME"
-                  aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION >/dev/null 2>&1
-                  if [ $? -eq 0 ]; then
+                  EXISTS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NONE")
+                  if [[ "$EXISTS" != "NONE" ]]; then
                     echo "🗑️ Deleting CloudFormation stack: $STACK_NAME"
-                    aws cloudformation delete-stack --stack-name $STACK_NAME
+                    aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION
                     echo "⏳ Waiting for $STACK_NAME deletion to complete..."
                     aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
-                    echo "✅ Core stack deletion finished."
+
+                    STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "DELETE_COMPLETE")
+
+                    if [[ "$STATUS" == "DELETE_FAILED" ]]; then
+                      echo "❌ Stack deletion failed. Printing recent failure reasons:"
+                      aws cloudformation describe-stack-events \
+                        --stack-name $STACK_NAME --region $AWS_REGION \
+                        --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceType,ResourceStatusReason]" \
+                        --output table || true
+
+                      echo "🧹 Attempting to force delete stuck resources (like IGW or ENIs)..."
+                      # Try IGW detach again if needed
+                      IGW_ID=$(aws ec2 describe-internet-gateways --filters Name=tag:Name,Values=SkillBridgeIGW --query 'InternetGateways[0].InternetGatewayId' --output text --region $AWS_REGION || echo "None")
+                      VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=SkillBridgeVPC --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION || echo "None")
+                      if [ "$IGW_ID" != "None" ] && [ "$VPC_ID" != "None" ]; then
+                        echo "🪓 Retrying IGW detach for $IGW_ID ..."
+                        aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region $AWS_REGION || true
+                      fi
+                      
+                      # Retry delete once more
+                      echo "🔁 Retrying CloudFormation deletion..."
+                      aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION || true
+                      aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
+                      echo "✅ Retry attempt finished."
+                    else
+                      echo "✅ Core stack deletion completed successfully."
+                    fi
                   else
                     echo "⚠️ Core stack not found. Skipping."
                   fi
 
-            - name: 🧺 Clean Up ECR Repositories (Optional)
+            - name: 🧺 Clean Up ECR Repositories
               continue-on-error: true
               run: |
                   echo "🧺 Cleaning up leftover ECR repositories..."
@@ -87,7 +143,23 @@ jobs:
                   done
                   echo "✅ ECR cleanup completed."
 
+            - name: 🔎 Verify Remaining Resources
+              run: |
+                  echo "🔍 Listing remaining stacks (should be empty for SkillBridge):"
+                  aws cloudformation list-stacks --region $AWS_REGION \
+                    --query "StackSummaries[?StackName=='${STACK_NAME}' && StackStatus!='DELETE_COMPLETE'].[StackName,StackStatus]" --output table || true
+                  echo ""
+                  echo "🔍 Checking for leftover EKS clusters:"
+                  aws eks list-clusters --region $AWS_REGION --output table || true
+                  echo ""
+                  echo "🔍 Checking for leftover ECR repositories:"
+                  aws ecr describe-repositories --region $AWS_REGION --query "repositories[].repositoryName" --output table || true
+                  echo ""
+                  echo "🔍 Checking for leftover VPCs tagged SkillBridgeVPC:"
+                  aws ec2 describe-vpcs --filters Name=tag:Name,Values=SkillBridgeVPC --region $AWS_REGION --query 'Vpcs[].VpcId' --output table || true
+
             - name: ✅ Final Status
               run: |
                   echo "🎉 All SkillBridge infrastructure cleanup steps completed."
-                  echo "💡 Tip: Verify manually in AWS Console → CloudFormation, ECR, and EKS to confirm all resources are gone."
+                  echo "💡 Verification summary above confirms whether anything remains."
+                  echo "🚀 Safe to re-run deployment anytime."
