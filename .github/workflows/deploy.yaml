@@ -33,6 +33,14 @@ jobs:
                   aws ecr get-login-password --region $AWS_REGION | docker login \
                     --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
+            - name: Deploy CFN (VPC + EKS + ECR)
+              run: |
+                  aws cloudformation deploy \
+                    --stack-name $STACK_NAME \
+                    --template-file cloudformation/main.yaml \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --no-fail-on-empty-changeset
+
             - name: Build & push images
               run: |
                   declare -a services=("user-service" "booking-service" "availability-service" "search-service")
@@ -42,14 +50,6 @@ jobs:
                     docker tag $s:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$s:${IMAGE_TAG}
                     docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$s:${IMAGE_TAG}
                   done
-
-            - name: Deploy CFN (VPC + EKS + ECR)
-              run: |
-                  aws cloudformation deploy \
-                    --stack-name $STACK_NAME \
-                    --template-file cloudformation/main.yaml \
-                    --capabilities CAPABILITY_NAMED_IAM \
-                    --no-fail-on-empty-changeset
 
             - name: Update kubeconfig
               run: |
