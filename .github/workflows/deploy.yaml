@@ -53,6 +53,21 @@ jobs:
                   done
                   echo "✅ All ECR repositories are ready."
 
+            - name: 🧹 Clean Up Failed or Stuck Stacks
+              run: |
+                  STATUS=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_NAME --region $AWS_REGION \
+                    --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "NONE")
+
+                  if [[ "$STATUS" == "ROLLBACK_COMPLETE" || "$STATUS" == "ROLLBACK_FAILED" ]]; then
+                    echo "⚠️ Stack $STACK_NAME is in $STATUS. Deleting..."
+                    aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION || true
+                    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
+                    echo "✅ Deleted stuck stack $STACK_NAME"
+                  else
+                    echo "ℹ️ Stack status is $STATUS — continuing"
+                  fi
+
             - name: ☁️ Deploy CloudFormation (VPC + EKS + ECR)
               run: |
                   echo "🚧 Deploying CloudFormation stack: $STACK_NAME ..."
