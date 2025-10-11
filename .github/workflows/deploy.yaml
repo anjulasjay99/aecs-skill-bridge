@@ -8,110 +8,167 @@ env:
     AWS_REGION: ap-southeast-1
     STACK_NAME: skillbridge-stack
     IMAGE_TAG: latest
-    SECRET_NAME: MongoDBConnection # <-- your actual AWS secret name
+    SECRET_NAME: MongoDBConnection
 
 jobs:
     deploy:
         runs-on: ubuntu-latest
 
         steps:
-            - name: Checkout
+            - name: 🧾 Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Configure AWS
+            - name: ⚙️ Configure AWS Credentials
               uses: aws-actions/configure-aws-credentials@v4
               with:
                   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
                   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            - name: Ensure ECR repos (created by CFN)
-              run: echo "Repos will be created by CFN ecr-repos.yaml"
-
-            - name: Docker login to ECR
+            - name: 🔍 Debug AWS Identity
               run: |
+                  echo "🔑 Verifying AWS credentials..."
+                  aws sts get-caller-identity
+                  echo "✅ AWS credentials verified."
+
+            - name: 🧱 Docker Login to ECR
+              run: |
+                  echo "🔐 Logging into ECR..."
                   aws ecr get-login-password --region $AWS_REGION | docker login \
                     --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+                  echo "✅ Docker authenticated with ECR."
 
-            - name: Deploy CFN (VPC + EKS + ECR)
+            - name: 🧰 Ensure ECR Repositories Exist
               run: |
+                  set -e
+                  declare -a repos=("user-service" "booking-service" "availability-service" "search-service")
+                  for repo in "${repos[@]}"; do
+                    echo "🧩 Checking ECR repo: $repo"
+                    if aws ecr describe-repositories --repository-names $repo --region $AWS_REGION >/dev/null 2>&1; then
+                      echo "✅ Repository '$repo' already exists."
+                    else
+                      echo "🚀 Creating ECR repository '$repo'..."
+                      aws ecr create-repository --repository-name $repo --region $AWS_REGION
+                    fi
+                  done
+                  echo "✅ All ECR repositories are ready."
+
+            - name: ☁️ Deploy CloudFormation (VPC + EKS + ECR)
+              run: |
+                  echo "🚧 Deploying CloudFormation stack: $STACK_NAME ..."
                   aws cloudformation deploy \
                     --stack-name $STACK_NAME \
                     --template-file cloudformation/main.yaml \
                     --capabilities CAPABILITY_NAMED_IAM \
-                    --no-fail-on-empty-changeset
+                    --no-fail-on-empty-changeset \
+                    --region $AWS_REGION \
+                    --debug
+                  echo "✅ CloudFormation stack deployed successfully."
 
-            - name: Build & push images
+            - name: 🛠️ Build & Push Docker Images
               run: |
+                  set -e
                   declare -a services=("user-service" "booking-service" "availability-service" "search-service")
                   for s in "${services[@]}"; do
-                    echo "Building $s"
+                    echo "🧱 Building image for $s..."
                     docker build -t $s ./services/$s
+                    echo "🔄 Tagging image for ECR..."
                     docker tag $s:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$s:${IMAGE_TAG}
+                    echo "📤 Pushing image to ECR..."
                     docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$s:${IMAGE_TAG}
+                    echo "✅ Successfully built and pushed $s"
                   done
 
-            - name: Update kubeconfig
+            - name: 🔄 Update Kubeconfig
               run: |
+                  echo "📡 Fetching EKS Cluster name from CloudFormation..."
                   CLUSTER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
                     --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
+                  echo "🧩 Cluster detected: $CLUSTER"
                   aws eks update-kubeconfig --name $CLUSTER --region $AWS_REGION
+                  echo "✅ kubeconfig updated successfully."
 
-            - name: Create namespace
-              run: kubectl apply -f k8s/namespace.yaml
+            - name: 🧠 Verify Cluster Connection
+              run: |
+                  echo "🔍 Checking if cluster is reachable..."
+                  kubectl cluster-info
+                  kubectl get nodes -o wide || echo "⚠️ Could not list nodes yet (cluster still initializing)."
 
-            - name: Fetch Mongo URI from Secrets Manager and create k8s secret
+            - name: 🏗️ Create Namespace
+              run: |
+                  echo "📁 Creating namespace skillbridge (if not exists)..."
+                  kubectl get ns skillbridge || kubectl create ns skillbridge
+                  echo "✅ Namespace ready."
+
+            - name: 🔑 Fetch Mongo URI from AWS Secrets Manager
               id: mongo
               run: |
-                  # Get the SecretString JSON from Secrets Manager
+                  echo "🔐 Fetching secret from Secrets Manager: $SECRET_NAME"
                   RAW_JSON=$(aws secretsmanager get-secret-value \
                     --secret-id "$SECRET_NAME" \
                     --query SecretString --output text)
-
-                  # Extract only the MONGODB_URI field
                   URI=$(echo "$RAW_JSON" | jq -r '.MONGODB_URI')
-
-                  # Recreate the Kubernetes secret with the same key (MONGODB_URI)
+                  if [ -z "$URI" ]; then
+                    echo "❌ Failed to extract MONGODB_URI from secret!"
+                    exit 1
+                  fi
+                  echo "✅ Retrieved Mongo URI: [REDACTED]"
                   kubectl -n skillbridge delete secret mongodb-uri --ignore-not-found
                   kubectl -n skillbridge create secret generic mongodb-uri --from-literal=MONGODB_URI="$URI"
-
-                  # Output to GitHub context for logs
-                  echo "MongoDB URI retrieved successfully and stored in Kubernetes secret."
+                  echo "✅ MongoDB secret created successfully in Kubernetes."
                   echo "uri=$URI" >> $GITHUB_OUTPUT
 
-            - name: Apply service manifests
+            - name: 🧩 Apply Service Manifests
               env:
                   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
               run: |
+                  echo "🚀 Applying Kubernetes manifests..."
                   sed "s|\${AWS_ACCOUNT_ID}|${AWS_ACCOUNT_ID}|g" k8s/services-deployments.yaml | kubectl apply -f -
+                  kubectl get pods -n skillbridge
+                  echo "✅ Services deployed successfully."
 
-            - name: Deploy edge nginx
+            - name: 🌐 Deploy Edge Nginx
               run: |
+                  echo "🧭 Deploying edge Nginx gateway..."
                   kubectl apply -f k8s/edge-nginx-configmap.yaml
                   kubectl apply -f k8s/edge-nginx-deployment.yaml
+                  kubectl get svc -n skillbridge
+                  echo "✅ Edge Nginx deployment applied."
 
-            - name: Wait for edge ELB and capture DNS
+            - name: ⏳ Wait for LoadBalancer & Capture DNS
               id: edge
               run: |
+                  echo "🕒 Waiting for edge LoadBalancer hostname..."
                   for i in {1..60}; do
                     DNS=$(kubectl -n skillbridge get svc edge-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                    if [ -n "$DNS" ]; then echo "dns=$DNS" >> $GITHUB_OUTPUT; exit 0; fi
-                    echo "Waiting for ELB..."; sleep 10
+                    if [ -n "$DNS" ]; then
+                      echo "🌐 LoadBalancer available: $DNS"
+                      echo "dns=$DNS" >> $GITHUB_OUTPUT
+                      exit 0
+                    fi
+                    echo "⏳ Waiting for ELB to be provisioned... ($i/60)"
+                    sleep 10
                   done
-                  echo "ELB not ready"; exit 1
+                  echo "❌ LoadBalancer not ready after 10 minutes."
+                  kubectl describe svc edge-nginx -n skillbridge
+                  exit 1
 
-            - name: Deploy API Gateway (proxy to edge)
+            - name: ☁️ Deploy API Gateway
               run: |
                   BASE_URL="http://${{ steps.edge.outputs.dns }}"
+                  echo "🚀 Deploying API Gateway with base URL: $BASE_URL"
                   aws cloudformation deploy \
                     --stack-name ${STACK_NAME}-apigw \
                     --template-file cloudformation/apigateway.yaml \
                     --parameter-overrides IntegrationBaseUrl="$BASE_URL" \
                     --capabilities CAPABILITY_NAMED_IAM \
-                    --no-fail-on-empty-changeset
+                    --no-fail-on-empty-changeset \
+                    --debug
+                  echo "✅ API Gateway stack deployed."
 
-            - name: Show API endpoint
+            - name: 🔗 Show API Endpoint
               run: |
+                  echo "🔍 Fetching API Gateway endpoint..."
                   API=$(aws cloudformation describe-stacks --stack-name ${STACK_NAME}-apigw \
                       --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text)
-                  echo "✅ API Gateway Endpoint: $API"
+                  echo "✅ API Gateway endpoint is: $API"

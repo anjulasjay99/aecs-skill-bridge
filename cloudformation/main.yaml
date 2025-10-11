@@ -1,29 +1,198 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Master CFN (VPC + EKS + ECR). API Gateway is deployed after K8s edge LB is ready.
+Description: >
+    SkillBridge unified CloudFormation stack
+    (VPC + EKS Cluster + Node Group + IAM Roles + ECR Repositories)
+    Region: ap-southeast-1
 
 Parameters:
     ClusterName:
         Type: String
         Default: skillbridge-cluster
+        Description: Name of the EKS Cluster
 
 Resources:
-    VPCStack:
-        Type: AWS::CloudFormation::Stack
+    # =======================================================
+    # Networking - VPC, Subnet, Internet Gateway, Route Table
+    # =======================================================
+    VPC:
+        Type: AWS::EC2::VPC
         Properties:
-            TemplateURL: ./vpc.yaml
+            CidrBlock: 10.10.0.0/16
+            EnableDnsSupport: true
+            EnableDnsHostnames: true
+            Tags:
+                - Key: Name
+                  Value: SkillBridgeVPC
 
-    EKSStack:
-        Type: AWS::CloudFormation::Stack
+    PublicSubnetA:
+        Type: AWS::EC2::Subnet
         Properties:
-            TemplateURL: ./eks-cluster.yaml
-            Parameters:
-                ClusterName: !Ref ClusterName
+            VpcId: !Ref VPC
+            CidrBlock: 10.10.1.0/24
+            MapPublicIpOnLaunch: true
+            AvailabilityZone: !Select [0, !GetAZs ""]
+            Tags:
+                - Key: Name
+                  Value: SkillBridgePublicSubnetA
 
-    ECRRepos:
-        Type: AWS::CloudFormation::Stack
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
         Properties:
-            TemplateURL: ./ecr-repos.yaml
+            Tags:
+                - Key: Name
+                  Value: SkillBridgeIGW
+
+    AttachIGW:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            VpcId: !Ref VPC
+            InternetGatewayId: !Ref InternetGateway
+
+    RouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref VPC
+            Tags:
+                - Key: Name
+                  Value: SkillBridgePublicRouteTable
+
+    DefaultRoute:
+        Type: AWS::EC2::Route
+        DependsOn: AttachIGW
+        Properties:
+            RouteTableId: !Ref RouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+
+    PublicSubnetRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PublicSubnetA
+            RouteTableId: !Ref RouteTable
+
+    # =======================================================
+    # IAM Roles
+    # =======================================================
+    EKSClusterRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: SkillBridgeEKSClusterRole
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: eks.amazonaws.com
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+    NodeInstanceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: SkillBridgeNodeInstanceRole
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: ec2.amazonaws.com
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+                - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+                - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+                - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+    # =======================================================
+    # EKS Cluster + Node Group
+    # =======================================================
+    EKSCluster:
+        Type: AWS::EKS::Cluster
+        Properties:
+            Name: !Ref ClusterName
+            Version: "1.30"
+            RoleArn: !GetAtt EKSClusterRole.Arn
+            ResourcesVpcConfig:
+                SubnetIds:
+                    - !Ref PublicSubnetA
+
+    EKSNodeGroup:
+        Type: AWS::EKS::Nodegroup
+        DependsOn: EKSCluster
+        Properties:
+            ClusterName: !Ref ClusterName
+            NodeRole: !GetAtt NodeInstanceRole.Arn
+            Subnets:
+                - !Ref PublicSubnetA
+            ScalingConfig:
+                MinSize: 1
+                DesiredSize: 1
+                MaxSize: 2
+            InstanceTypes:
+                - t3.small
+            AmiType: AL2_x86_64
+            Tags:
+                Name: SkillBridgeNodeGroup
+
+    # =======================================================
+    # ECR Repositories
+    # =======================================================
+    ECRUserService:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: user-service
+            ImageScanningConfiguration:
+                ScanOnPush: true
+            Tags:
+                - Key: Name
+                  Value: user-service
+
+    ECRBookingService:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: booking-service
+            ImageScanningConfiguration:
+                ScanOnPush: true
+            Tags:
+                - Key: Name
+                  Value: booking-service
+
+    ECRAvailabilityService:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: availability-service
+            ImageScanningConfiguration:
+                ScanOnPush: true
+            Tags:
+                - Key: Name
+                  Value: availability-service
+
+    ECRSearchService:
+        Type: AWS::ECR::Repository
+        Properties:
+            RepositoryName: search-service
+            ImageScanningConfiguration:
+                ScanOnPush: true
+            Tags:
+                - Key: Name
+                  Value: search-service
 
 Outputs:
     ClusterName:
-        Value: !GetAtt EKSStack.Outputs.ClusterName
+        Description: Name of the EKS Cluster
+        Value: !Ref ClusterName
+        Export:
+            Name: SkillBridge:ClusterName
+
+    VpcId:
+        Description: ID of the VPC
+        Value: !Ref VPC
+        Export:
+            Name: SkillBridge:VpcId
+
+    PublicSubnetId:
+        Description: ID of the public subnet
+        Value: !Ref PublicSubnetA
+        Export:
+            Name: SkillBridge:PublicSubnetId
