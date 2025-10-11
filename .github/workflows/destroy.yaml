@@ -113,25 +113,135 @@ jobs:
 
                   echo "✅ Public IP cleanup complete. IGW should now be safe to detach."
 
-            - name: 🪓 Pre-detach Internet Gateway (prevent NotStabilized)
+            # - name: 🪓 Pre-detach Internet Gateway (prevent NotStabilized)
+            #   continue-on-error: true
+            #   run: |
+            #       echo "🧭 Searching for Internet Gateway attached to SkillBridge VPC..."
+            #       IGW_ID=$(aws ec2 describe-internet-gateways \
+            #         --filters Name=tag:Name,Values=SkillBridgeIGW \
+            #         --query 'InternetGateways[0].InternetGatewayId' --output text --region $AWS_REGION || echo "None")
+            #       VPC_ID=$(aws ec2 describe-vpcs \
+            #         --filters Name=tag:Name,Values=SkillBridgeVPC \
+            #         --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION || echo "None")
+
+            #       if [ "$IGW_ID" != "None" ] && [ "$VPC_ID" != "None" ]; then
+            #         echo "🪓 Detaching IGW ($IGW_ID) from VPC ($VPC_ID)..."
+            #         aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region $AWS_REGION || true
+            #         sleep 10
+            #         echo "✅ Detachment command issued successfully."
+            #       else
+            #         echo "⚠️ IGW or VPC not found — nothing to detach."
+            #       fi
+
+            - name: 🪓 Pre-detach Internet Gateway and Clean Network (prevent NotStabilized)
               continue-on-error: true
               run: |
-                  echo "🧭 Searching for Internet Gateway attached to SkillBridge VPC..."
-                  IGW_ID=$(aws ec2 describe-internet-gateways \
-                    --filters Name=tag:Name,Values=SkillBridgeIGW \
-                    --query 'InternetGateways[0].InternetGatewayId' --output text --region $AWS_REGION || echo "None")
+                  echo "🧭 Searching for SkillBridge networking resources..."
+
                   VPC_ID=$(aws ec2 describe-vpcs \
                     --filters Name=tag:Name,Values=SkillBridgeVPC \
                     --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION || echo "None")
 
-                  if [ "$IGW_ID" != "None" ] && [ "$VPC_ID" != "None" ]; then
-                    echo "🪓 Detaching IGW ($IGW_ID) from VPC ($VPC_ID)..."
-                    aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region $AWS_REGION || true
-                    sleep 10
-                    echo "✅ Detachment command issued successfully."
-                  else
-                    echo "⚠️ IGW or VPC not found — nothing to detach."
+                  if [ "$VPC_ID" = "None" ]; then
+                    echo "⚠️ No SkillBridgeVPC found. Skipping."
+                    exit 0
                   fi
+
+                  echo "✅ Found VPC: $VPC_ID"
+
+                  # ─────────────────────────────────────────────
+                  # 1️⃣ Detach and delete Internet Gateway
+                  # ─────────────────────────────────────────────
+                  IGW_ID=$(aws ec2 describe-internet-gateways \
+                    --filters Name=attachment.vpc-id,Values=$VPC_ID \
+                    --query 'InternetGateways[0].InternetGatewayId' --output text --region $AWS_REGION || echo "None")
+                  if [ "$IGW_ID" != "None" ]; then
+                    echo "🪓 Detaching Internet Gateway: $IGW_ID"
+                    aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region $AWS_REGION || true
+                    sleep 5
+                    echo "🗑️ Deleting Internet Gateway: $IGW_ID"
+                    aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" --region $AWS_REGION || true
+                  fi
+
+                  # ─────────────────────────────────────────────
+                  # 2️⃣ Delete NAT Gateways (if any remain)
+                  # ─────────────────────────────────────────────
+                  NAT_IDS=$(aws ec2 describe-nat-gateways \
+                    --filter Name=vpc-id,Values=$VPC_ID \
+                    --query "NatGateways[].NatGatewayId" --output text --region $AWS_REGION || echo "")
+                  for NAT in $NAT_IDS; do
+                    echo "🗑️ Deleting NAT Gateway: $NAT"
+                    aws ec2 delete-nat-gateway --nat-gateway-id $NAT --region $AWS_REGION || true
+                  done
+                  sleep 30
+
+                  # ─────────────────────────────────────────────
+                  # 3️⃣ Delete Elastic IPs (to avoid dependency errors)
+                  # ─────────────────────────────────────────────
+                  ALLOC_IDS=$(aws ec2 describe-addresses \
+                    --filters Name=domain,Values=vpc \
+                    --query "Addresses[].AllocationId" --output text --region $AWS_REGION || echo "")
+                  for AID in $ALLOC_IDS; do
+                    echo "🪓 Releasing Elastic IP: $AID"
+                    aws ec2 release-address --allocation-id $AID --region $AWS_REGION || true
+                  done
+
+                  # ─────────────────────────────────────────────
+                  # 4️⃣ Delete non-main route tables
+                  # ─────────────────────────────────────────────
+                  RTB_IDS=$(aws ec2 describe-route-tables \
+                    --filters Name=vpc-id,Values=$VPC_ID \
+                    --query 'RouteTables[].RouteTableId' --output text --region $AWS_REGION || echo "")
+                  for RTB in $RTB_IDS; do
+                    MAIN=$(aws ec2 describe-route-tables \
+                      --route-table-ids $RTB \
+                      --query 'RouteTables[0].Associations[?Main==`true`]' --output text --region $AWS_REGION || echo "")
+                    if [ -z "$MAIN" ]; then
+                      echo "🗑️ Deleting route table: $RTB"
+                      aws ec2 delete-route-table --route-table-id $RTB --region $AWS_REGION || true
+                    fi
+                  done
+
+                  # ─────────────────────────────────────────────
+                  # 5️⃣ Delete subnets
+                  # ─────────────────────────────────────────────
+                  SUBNET_IDS=$(aws ec2 describe-subnets \
+                    --filters Name=vpc-id,Values=$VPC_ID \
+                    --query 'Subnets[].SubnetId' --output text --region $AWS_REGION || echo "")
+                  for SUBNET in $SUBNET_IDS; do
+                    echo "🗑️ Deleting subnet: $SUBNET"
+                    aws ec2 delete-subnet --subnet-id $SUBNET --region $AWS_REGION || true
+                  done
+
+                  # ─────────────────────────────────────────────
+                  # 6️⃣ Delete non-default security groups
+                  # ─────────────────────────────────────────────
+                  SG_IDS=$(aws ec2 describe-security-groups \
+                    --filters Name=vpc-id,Values=$VPC_ID \
+                    --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text --region $AWS_REGION || echo "")
+                  for SG in $SG_IDS; do
+                    echo "🗑️ Deleting security group: $SG"
+                    aws ec2 delete-security-group --group-id $SG --region $AWS_REGION || true
+                  done
+
+                  # ─────────────────────────────────────────────
+                  # 7️⃣ Delete orphan ENIs
+                  # ─────────────────────────────────────────────
+                  ENI_IDS=$(aws ec2 describe-network-interfaces \
+                    --filters Name=vpc-id,Values=$VPC_ID \
+                    --query 'NetworkInterfaces[].NetworkInterfaceId' --output text --region $AWS_REGION || echo "")
+                  for ENI in $ENI_IDS; do
+                    echo "🧹 Deleting ENI: $ENI"
+                    aws ec2 delete-network-interface --network-interface-id $ENI --region $AWS_REGION || true
+                  done
+
+                  # ─────────────────────────────────────────────
+                  # 8️⃣ Finally delete the VPC
+                  # ─────────────────────────────────────────────
+                  echo "🗑️ Deleting VPC: $VPC_ID"
+                  aws ec2 delete-vpc --vpc-id $VPC_ID --region $AWS_REGION || true
+
+                  echo "✅ Network cleanup complete. Safe to delete CloudFormation stack."
 
             - name: 🧱 Delete Core CloudFormation Stack
               run: |
