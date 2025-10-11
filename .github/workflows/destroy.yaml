@@ -1,8 +1,8 @@
-name: Destroy SkillBridge (EKS + API Gateway)
+name: 🧹 Destroy SkillBridge (EKS + API Gateway)
 
 on:
     push:
-        branches: [kill-em-all]
+        branches: [kill-em-all, "feature/automated-deployment-setup"]
 
 env:
     AWS_REGION: ap-southeast-1
@@ -12,38 +12,82 @@ jobs:
     destroy:
         runs-on: ubuntu-latest
         steps:
-            - name: Configure AWS
+            - name: ⚙️ Configure AWS Credentials
               uses: aws-actions/configure-aws-credentials@v4
               with:
                   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
                   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            - name: Update kubeconfig (best-effort)
+            - name: 🔍 Identify Cluster and Configure kubectl (best-effort)
               continue-on-error: true
               run: |
+                  echo "🔎 Checking for existing EKS cluster in stack: $STACK_NAME ..."
                   CLUSTER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
-                    --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text) || true
+                    --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text 2>/dev/null || true)
                   if [ -n "$CLUSTER" ]; then
+                    echo "✅ Found cluster: $CLUSTER"
                     aws eks update-kubeconfig --name $CLUSTER --region $AWS_REGION || true
+                  else
+                    echo "⚠️ No EKS cluster output found in stack $STACK_NAME"
                   fi
 
-            - name: Delete k8s resources (best-effort)
+            - name: 🧨 Delete Kubernetes Resources
               continue-on-error: true
               run: |
+                  echo "🧨 Deleting Kubernetes resources if they exist..."
                   kubectl delete -f k8s/edge-nginx-deployment.yaml --ignore-not-found
                   kubectl delete -f k8s/edge-nginx-configmap.yaml --ignore-not-found
-                  # Template apply to delete (image placeholders)
                   sed "s|\${AWS_ACCOUNT_ID}|${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/services-deployments.yaml | kubectl delete -f - --ignore-not-found
                   kubectl delete -f k8s/namespace.yaml --ignore-not-found
+                  echo "✅ K8s cleanup attempted (ignored missing resources)."
 
-            - name: Delete API Gateway stack
+            - name: 🌐 Delete API Gateway Stack
               continue-on-error: true
               run: |
-                  aws cloudformation delete-stack --stack-name ${STACK_NAME}-apigw
-                  aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME}-apigw || true
+                  echo "🌐 Checking for API Gateway stack..."
+                  aws cloudformation describe-stacks --stack-name ${STACK_NAME}-apigw --region $AWS_REGION >/dev/null 2>&1
+                  if [ $? -eq 0 ]; then
+                    echo "🗑️ Deleting API Gateway stack: ${STACK_NAME}-apigw"
+                    aws cloudformation delete-stack --stack-name ${STACK_NAME}-apigw
+                    echo "⏳ Waiting for ${STACK_NAME}-apigw deletion to complete..."
+                    aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME}-apigw --region $AWS_REGION || true
+                    echo "✅ API Gateway stack deletion finished."
+                  else
+                    echo "⚠️ API Gateway stack not found. Skipping."
+                  fi
 
-            - name: Delete core stack
+            - name: 🧱 Delete Core CloudFormation Stack
               run: |
-                  aws cloudformation delete-stack --stack-name $STACK_NAME
-                  aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
+                  echo "🧱 Checking for core stack: $STACK_NAME"
+                  aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION >/dev/null 2>&1
+                  if [ $? -eq 0 ]; then
+                    echo "🗑️ Deleting CloudFormation stack: $STACK_NAME"
+                    aws cloudformation delete-stack --stack-name $STACK_NAME
+                    echo "⏳ Waiting for $STACK_NAME deletion to complete..."
+                    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $AWS_REGION || true
+                    echo "✅ Core stack deletion finished."
+                  else
+                    echo "⚠️ Core stack not found. Skipping."
+                  fi
+
+            - name: 🧺 Clean Up ECR Repositories (Optional)
+              continue-on-error: true
+              run: |
+                  echo "🧺 Cleaning up leftover ECR repositories..."
+                  for repo in user-service booking-service availability-service search-service; do
+                    echo "→ Checking for repository: $repo"
+                    aws ecr describe-repositories --repository-names "$repo" --region $AWS_REGION >/dev/null 2>&1
+                    if [ $? -eq 0 ]; then
+                      echo "🗑️ Deleting ECR repository: $repo"
+                      aws ecr delete-repository --repository-name "$repo" --region $AWS_REGION --force || true
+                    else
+                      echo "⚠️ Repository $repo not found."
+                    fi
+                  done
+                  echo "✅ ECR cleanup completed."
+
+            - name: ✅ Final Status
+              run: |
+                  echo "🎉 All SkillBridge infrastructure cleanup steps completed."
+                  echo "💡 Tip: Verify manually in AWS Console → CloudFormation, ECR, and EKS to confirm all resources are gone."
