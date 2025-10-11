@@ -9,9 +9,10 @@ const app = express();
 app.use(express.json());
 
 const MONGO_URI = process.env.MONGODB_URI ?? "";
+const DB_NAME = process.env.DB_NAME ?? "";
 
 mongoose
-    .connect(MONGO_URI)
+    .connect(`${MONGO_URI}/${DB_NAME}`)
     .then(() => {
         console.log("MongoDB connected successfully");
     })

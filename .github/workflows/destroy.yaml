@@ -1,0 +1,49 @@
+name: Destroy SkillBridge (EKS + API Gateway)
+
+on:
+    push:
+        branches: [kill-em-all]
+
+env:
+    AWS_REGION: ap-southeast-1
+    STACK_NAME: skillbridge-stack
+
+jobs:
+    destroy:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Configure AWS
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Update kubeconfig (best-effort)
+              continue-on-error: true
+              run: |
+                  CLUSTER=$(aws cloudformation describe-stacks --stack-name $STACK_NAME \
+                    --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text) || true
+                  if [ -n "$CLUSTER" ]; then
+                    aws eks update-kubeconfig --name $CLUSTER --region $AWS_REGION || true
+                  fi
+
+            - name: Delete k8s resources (best-effort)
+              continue-on-error: true
+              run: |
+                  kubectl delete -f k8s/edge-nginx-deployment.yaml --ignore-not-found
+                  kubectl delete -f k8s/edge-nginx-configmap.yaml --ignore-not-found
+                  # Template apply to delete (image placeholders)
+                  sed "s|\${AWS_ACCOUNT_ID}|${{ secrets.AWS_ACCOUNT_ID }}|g" k8s/services-deployments.yaml | kubectl delete -f - --ignore-not-found
+                  kubectl delete -f k8s/namespace.yaml --ignore-not-found
+
+            - name: Delete API Gateway stack
+              continue-on-error: true
+              run: |
+                  aws cloudformation delete-stack --stack-name ${STACK_NAME}-apigw
+                  aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME}-apigw || true
+
+            - name: Delete core stack
+              run: |
+                  aws cloudformation delete-stack --stack-name $STACK_NAME
+                  aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME

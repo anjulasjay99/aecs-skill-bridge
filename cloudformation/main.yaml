@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Master CFN (VPC + EKS + ECR). API Gateway is deployed after K8s edge LB is ready.
+
+Parameters:
+    ClusterName:
+        Type: String
+        Default: skillbridge-cluster
+
+Resources:
+    VPCStack:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: ./vpc.yaml
+
+    EKSStack:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: ./eks-cluster.yaml
+            Parameters:
+                ClusterName: !Ref ClusterName
+
+    ECRRepos:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: ./ecr-repos.yaml
+
+Outputs:
+    ClusterName:
+        Value: !GetAtt EKSStack.Outputs.ClusterName
