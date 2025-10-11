@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { createUser } from "../services/userService";
+import { createUser } from "../services/userService.js";
 import bcrypt from "bcryptjs";
-import { Role } from "../types/Enums";
-import { createMentorProfile } from "../services/mentorService";
+import { Role } from "../types/Enums.js";
+import { createMentorProfile } from "../services/mentorService.js";
 import { Types } from "mongoose";
 
 const router = Router();

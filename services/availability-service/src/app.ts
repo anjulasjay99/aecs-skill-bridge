@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import availabilityRoutes from "./routes/availabilityRoutes";
+import availabilityRoutes from "./routes/availabilityRoutes.js";
 
 dotenv.config();
 

@@ -1,4 +1,4 @@
-import { Booking, IBooking } from "../models/Booking";
+import { Booking, IBooking } from "../models/Booking.js";
 import { Types } from "mongoose";
 
 // Create booking

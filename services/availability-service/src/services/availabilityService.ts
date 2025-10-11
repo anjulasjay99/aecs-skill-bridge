@@ -1,7 +1,7 @@
 import {
     AvailabilitySlot,
     IAvailabilitySlot,
-} from "../models/AvailabilitySlot";
+} from "../models/AvailabilitySlot.js";
 import { Types } from "mongoose";
 
 // Create new availability slot

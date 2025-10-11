@@ -1,6 +1,6 @@
-import { MentorProfile as MentorProfileDB } from "../models/MentorProfile";
-import APIError from "../types/APIError";
-import { MentorProfile } from "../types/User";
+import { MentorProfile as MentorProfileDB } from "../models/MentorProfile.js";
+import APIError from "../types/APIError.js";
+import { MentorProfile } from "../types/User.js";
 
 export const createMentorProfile = async (mentorProfile: MentorProfile) => {
     const res = await MentorProfileDB.create(mentorProfile);

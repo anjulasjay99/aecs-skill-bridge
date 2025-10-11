@@ -1,5 +1,5 @@
 import { Schema, model, Document } from "mongoose";
-import { Role } from "../types/Enums";
+import { Role } from "../types/Enums.js";
 
 export interface IUser extends Document {
     email: string;

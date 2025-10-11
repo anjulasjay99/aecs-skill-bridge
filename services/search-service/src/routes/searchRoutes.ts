@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { searchMentors, getMentorById } from "../services/searchService";
+import { searchMentors, getMentorById } from "../services/searchService.js";
 
 const router = Router();
 

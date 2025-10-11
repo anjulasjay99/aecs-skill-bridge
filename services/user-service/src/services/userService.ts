@@ -1,6 +1,6 @@
-import { User as UserDB } from "../models/userModel";
-import APIError from "../types/APIError";
-import { User } from "../types/User";
+import { User as UserDB } from "../models/UserModel.js";
+import APIError from "../types/APIError.js";
+import { User } from "../types/User.js";
 
 export const createUser = async (user: User) => {
     const exists = await UserDB.exists({ email: user.email });

@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import searchRoutes from "./routes/searchRoutes";
+import searchRoutes from "./routes/searchRoutes.js";
 
 dotenv.config();
 

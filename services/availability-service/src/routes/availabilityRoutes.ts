@@ -4,7 +4,7 @@ import {
     getAvailabilitySlots,
     updateAvailabilitySlot,
     deleteAvailabilitySlot,
-} from "../services/availabilityService";
+} from "../services/availabilityService.js";
 
 const router = Router();
 

@@ -1,5 +1,5 @@
-import { MentorProfile } from "../models/MentorProfile";
-import { User } from "../models/UserModel";
+import { MentorProfile } from "../models/MentorProfile.js";
+import { User } from "../models/UserModel.js";
 import { Types } from "mongoose";
 
 // Get mentors with optional filters and pagination

@@ -5,7 +5,7 @@ import {
     getBookingById,
     updateBooking,
     deleteBooking,
-} from "../services/bookingService";
+} from "../services/bookingService.js";
 
 const router = Router();
 
