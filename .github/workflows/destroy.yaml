@@ -2,7 +2,7 @@ name: 🧹 Destroy SkillBridge (EKS + API Gateway)
 
 on:
     push:
-        branches: [kill-em-all, "feature/automated-deployment-setup"]
+        branches: [destroy]
 
 env:
     AWS_REGION: ap-southeast-1

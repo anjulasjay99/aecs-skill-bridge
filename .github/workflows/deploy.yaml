@@ -2,7 +2,7 @@ name: Deploy SkillBridge (EKS + API Gateway)
 
 on:
     push:
-        branches: [develop]
+        branches: [deploy]
 
 env:
     AWS_REGION: ap-southeast-1
