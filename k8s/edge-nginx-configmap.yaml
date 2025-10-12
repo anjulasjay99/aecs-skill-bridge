@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: edge-nginx-conf
+    namespace: skillbridge
+data:
+    default.conf: |
+        server {
+          listen 80;
+
+          location /users/ {
+            proxy_pass http://user-service.skillbridge.svc.cluster.local:3001/;
+          }
+
+          location /bookings/ {
+            proxy_pass http://booking-service.skillbridge.svc.cluster.local:3002/;
+          }
+
+          location /availability/ {
+            proxy_pass http://availability-service.skillbridge.svc.cluster.local:3003/;
+          }
+
+          location /mentors/ {
+            proxy_pass http://search-service.skillbridge.svc.cluster.local:3004/;
+          }
+
+          # health
+          location = /healthz {
+            return 200 'ok';
+            add_header Content-Type text/plain;
+          }
+        }
