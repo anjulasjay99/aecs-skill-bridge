@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { APIURL, SEARCH_SERVICE } from "../environments/env";
+import { SEARCH_SERVICE } from "../environments/env";
 import {
     Loader2,
     UserCircle2,
@@ -14,6 +15,7 @@ import {
 interface Mentor {
     _id: string;
     userId?: {
+        _id?: string;
         firstName?: string;
         lastName?: string;
     };
@@ -33,6 +35,8 @@ interface MentorResponse {
 }
 
 const Discover = () => {
+    const navigate = useNavigate();
+
     const [mentors, setMentors] = useState<Mentor[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -88,7 +92,6 @@ const Discover = () => {
                 `${SEARCH_SERVICE}/mentors`,
                 { params }
             );
-
             const list = Array.isArray(res.data?.mentors)
                 ? res.data.mentors
                 : [];
@@ -120,6 +123,13 @@ const Discover = () => {
         setPage(1);
     }, [domainFilter, designationFilter, badgeFilter, expFilter, rateFilter]);
 
+    // 🧭 Navigate to mentor detail page
+    const handleCardClick = (mentor: Mentor) => {
+        if (mentor.userId?._id) {
+            navigate(`/mentor?id=${mentor.userId._id}`);
+        }
+    };
+
     return (
         <div className="flex-1 overflow-auto bg-gray-50 p-6">
             <div className="max-w-7xl mx-auto">
@@ -134,7 +144,7 @@ const Discover = () => {
                     </p>
                 </div>
 
-                {/* Filters (Dropdowns) */}
+                {/* Filters */}
                 <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
                     <select
                         className="border border-gray-300 rounded-lg p-2 w-full"
@@ -213,7 +223,8 @@ const Discover = () => {
                             mentors.map((m) => (
                                 <div
                                     key={m._id}
-                                    className="bg-white rounded-xl shadow p-6 hover:shadow-md transition duration-200"
+                                    onClick={() => handleCardClick(m)}
+                                    className="bg-white rounded-xl shadow p-6 hover:shadow-md transition duration-200 cursor-pointer"
                                 >
                                     <div className="flex items-center gap-4">
                                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
@@ -309,7 +320,7 @@ const Discover = () => {
                     </div>
                 )}
 
-                {/* Pagination from API */}
+                {/* Pagination */}
                 {!loading && totalPages > 1 && (
                     <div className="flex justify-center items-center mt-10 gap-3">
                         <button
