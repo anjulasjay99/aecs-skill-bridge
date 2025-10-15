@@ -27,6 +27,12 @@ export const getAvailabilitySlots = async (
     return await AvailabilitySlot.find(query).sort({ date: 1, startTime: 1 });
 };
 
+export const getSlotById = async (slotId: string) => {
+    const query: any = { _id: new Types.ObjectId(slotId) };
+
+    return await AvailabilitySlot.findOne(query);
+};
+
 // Update a slot (PATCH)
 export const updateAvailabilitySlot = async (
     slotId: string,

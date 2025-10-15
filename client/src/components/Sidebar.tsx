@@ -26,7 +26,7 @@ const Sidebar = () => {
                         <Link
                             to="/discover"
                             className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/dashboard")
+                                isActive("/discover")
                                     ? "text-white bg-blue-600"
                                     : "text-gray-500 hover:bg-gray-100"
                             }`}
@@ -35,37 +35,15 @@ const Sidebar = () => {
                             <span>Discover</span>
                         </Link>
                         <Link
-                            to="/dashboard"
+                            to="/sessions"
                             className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/dashboard")
-                                    ? "text-white bg-blue-600"
-                                    : "text-gray-500 hover:bg-gray-100"
-                            }`}
-                        >
-                            <Home className="w-5 h-5 mr-3" />
-                            <span>Dashboard</span>
-                        </Link>
-                        <Link
-                            to="/events"
-                            className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/events")
+                                isActive("/sessions")
                                     ? "text-white bg-blue-600"
                                     : "text-gray-500 hover:bg-gray-100"
                             }`}
                         >
                             <Calendar className="w-5 h-5 mr-3" />
-                            <span>Events</span>
-                        </Link>
-                        <Link
-                            to="/dashboard"
-                            className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/calendar")
-                                    ? "text-white bg-blue-600"
-                                    : "text-gray-500 hover:bg-gray-100"
-                            }`}
-                        >
-                            <Calendar className="w-5 h-5 mr-3" />
-                            <span>Calendar</span>
+                            <span>Sessions</span>
                         </Link>
                     </nav>
                 </div>

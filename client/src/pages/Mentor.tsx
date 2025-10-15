@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import {
@@ -25,15 +25,15 @@ import {
 
 interface Slot {
     _id: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    date: string; // "YYYY-MM-DD"
+    startTime: string; // "HH:mm"
+    endTime: string; // "HH:mm"
     isAvailable: boolean;
     isBooked: boolean;
 }
 
 interface Mentor {
-    _id: string;
+    _id: string; // mentor id
     userId?: {
         _id?: string;
         firstName?: string;
@@ -49,12 +49,24 @@ interface Mentor {
     createdAt?: string;
 }
 
+const parseDurationHours = (start: string, end: string) => {
+    // supports HH:mm
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+    const mins = eh * 60 + em - (sh * 60 + sm);
+    const hours = Math.max(1, mins / 60);
+    return hours;
+};
+
 const Mentor = () => {
     const [searchParams] = useSearchParams();
+    const mentorIdFromQuery = searchParams.get("id");
+
     const [mentor, setMentor] = useState<Mentor | null>(null);
     const [slots, setSlots] = useState<Slot[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loadingMentor, setLoadingMentor] = useState(true);
     const [loadingSlots, setLoadingSlots] = useState(true);
+
     const [activeTab, setActiveTab] = useState<"slots" | "about" | "reviews">(
         "slots"
     );
@@ -63,37 +75,69 @@ const Mentor = () => {
     const [showBookingPopup, setShowBookingPopup] = useState(false);
     const [bookingLoading, setBookingLoading] = useState(false);
 
-    const mentorIdParam = searchParams.get("id");
-
-    // Fetch mentor details
+    // 1) Fetch mentor details (expects mentor id in query param)
     useEffect(() => {
         const fetchMentor = async () => {
-            if (!mentorIdParam) return;
-            setLoading(true);
+            if (!mentorIdFromQuery) return;
+            setLoadingMentor(true);
             try {
+                // ✅ correct endpoint (singular)
                 const res = await axios.get(
-                    `${SEARCH_SERVICE}/mentors/${mentorIdParam}`
+                    `${SEARCH_SERVICE}/mentors/${mentorIdFromQuery}`
                 );
                 setMentor(res.data?.mentor || null);
             } catch (err) {
                 console.error("Error fetching mentor details:", err);
+                setMentor(null);
             } finally {
-                setLoading(false);
+                setLoadingMentor(false);
             }
         };
-
         fetchMentor();
-    }, [mentorIdParam]);
+    }, [mentorIdFromQuery]);
 
-    // Fetch available slots
+    // 2) Fetch availability, then check bookings per slot
     useEffect(() => {
-        const fetchSlots = async (mentorId: string | null) => {
+        const fetchSlots = async (mentorId: string) => {
             setLoadingSlots(true);
             try {
-                const res = await axios.get(
+                const availRes = await axios.get(
                     `${AVAIL_SERVICE}/availability/${mentorId}`
                 );
-                setSlots(res.data?.slots || []);
+                const fetchedSlots: Slot[] = Array.isArray(availRes.data?.slots)
+                    ? availRes.data.slots
+                    : [];
+
+                // For each slot, check if bookings exist -> then mark as booked/unavailable
+                const updated = await Promise.all(
+                    fetchedSlots.map(async (slot) => {
+                        try {
+                            const bookingRes = await axios.get(
+                                `${BOOKING_SERVICE}/bookings`,
+                                {
+                                    params: { slotId: slot._id },
+                                }
+                            );
+                            const data = bookingRes.data;
+                            const bookingsArr = Array.isArray(data)
+                                ? data
+                                : Array.isArray(data?.bookings)
+                                ? data.bookings
+                                : [];
+                            const hasBooking = bookingsArr.length > 0;
+                            return {
+                                ...slot,
+                                isBooked: hasBooking,
+                                isAvailable: slot.isAvailable && !hasBooking,
+                            };
+                        } catch (e) {
+                            // if booking check fails, fall back to slot flags
+                            return slot;
+                        }
+                    })
+                );
+
+                setSlots(updated);
             } catch (err) {
                 console.error("Error fetching slots:", err);
                 setSlots([]);
@@ -102,40 +146,53 @@ const Mentor = () => {
             }
         };
 
-        fetchSlots(mentorIdParam);
-    }, [mentorIdParam]);
+        if (mentorIdFromQuery) {
+            // ✅ use mentor._id for availability
+            fetchSlots(mentorIdFromQuery);
+        }
+    }, [mentorIdFromQuery]);
 
-    // Handle Book button click
+    const joinedDate = useMemo(
+        () =>
+            mentor?.createdAt
+                ? new Date(mentor.createdAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      year: "numeric",
+                  })
+                : "N/A",
+        [mentor?.createdAt]
+    );
+
     const handleBookClick = (slot: Slot) => {
         setSelectedSlot(slot);
         setShowBookingPopup(true);
     };
 
-    // Handle Proceed Booking
     const handleProceedBooking = async () => {
         if (!mentor || !selectedSlot) return;
 
         try {
             setBookingLoading(true);
+
+            // mentee from localStorage
             const userData = localStorage.getItem("user");
             const menteeId = userData ? JSON.parse(userData)?.user?._id : null;
-
             if (!menteeId) {
                 alert("User not logged in or mentee ID missing.");
                 return;
             }
 
-            // Calculate payment (duration × hourly rate)
-            const start = parseInt(selectedSlot.startTime.split(":")[0]);
-            const end = parseInt(selectedSlot.endTime.split(":")[0]);
-            const duration = Math.max(1, end - start);
+            const duration = parseDurationHours(
+                selectedSlot.startTime,
+                selectedSlot.endTime
+            );
             const payment = (mentor.hourlyRate || 0) * duration;
 
             const payload = {
-                mentorId: mentor._id,
-                menteeId,
-                slotId: selectedSlot._id,
-                payment,
+                mentorId: mentor.userId?._id, // mentor id
+                menteeId, // from localStorage
+                slotId: selectedSlot._id, // selected slot
+                payment, // computed
                 isConfirmed: false,
             };
 
@@ -146,6 +203,15 @@ const Mentor = () => {
             if (res.status === 200 || res.status === 201) {
                 alert("✅ Booking placed successfully!");
                 setShowBookingPopup(false);
+
+                // reflect booked state in current list without refetch
+                setSlots((prev) =>
+                    prev.map((s) =>
+                        s._id === selectedSlot._id
+                            ? { ...s, isBooked: true, isAvailable: false }
+                            : s
+                    )
+                );
             } else {
                 alert("⚠️ Booking failed. Please try again.");
             }
@@ -157,7 +223,8 @@ const Mentor = () => {
         }
     };
 
-    if (loading) {
+    // ---------- UI ----------
+    if (loadingMentor) {
         return (
             <div className="flex justify-center items-center h-64">
                 <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
@@ -173,17 +240,10 @@ const Mentor = () => {
         );
     }
 
-    const joinedDate = mentor.createdAt
-        ? new Date(mentor.createdAt).toLocaleDateString("en-US", {
-              month: "short",
-              year: "numeric",
-          })
-        : "N/A";
-
     return (
         <div className="flex-1 overflow-auto bg-gray-50 p-8">
             <div className="max-w-5xl mx-auto bg-white rounded-xl shadow p-8 grid grid-cols-1 gap-6">
-                {/* ===== Profile Header ===== */}
+                {/* Header */}
                 <div className="flex items-start gap-8">
                     <div className="w-32 h-32 bg-gray-100 rounded-full flex items-center justify-center">
                         <UserCircle2 className="w-20 h-20 text-gray-400" />
@@ -208,7 +268,7 @@ const Mentor = () => {
                     </div>
                 </div>
 
-                {/* ===== Tabs ===== */}
+                {/* Tabs */}
                 <div className="border-b border-gray-200 flex gap-6 mt-6">
                     {["slots", "about", "reviews"].map((tab) => (
                         <button
@@ -229,15 +289,11 @@ const Mentor = () => {
                     ))}
                 </div>
 
-                {/* ===== Tab Content ===== */}
+                {/* Content */}
                 <div className="mt-4">
-                    {/* ======= Slots Tab ======= */}
+                    {/* Slots */}
                     {activeTab === "slots" && (
                         <div className="grid grid-cols-1 gap-4">
-                            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                Available Slots
-                            </h3>
-
                             {loadingSlots ? (
                                 <div className="flex justify-center items-center h-32">
                                     <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
@@ -252,6 +308,9 @@ const Mentor = () => {
                                             month: "short",
                                             day: "numeric",
                                         });
+                                        const isFree =
+                                            slot.isAvailable && !slot.isBooked;
+
                                         return (
                                             <div
                                                 key={slot._id}
@@ -272,8 +331,7 @@ const Mentor = () => {
                                                 </div>
 
                                                 <div className="flex items-center gap-3">
-                                                    {slot.isAvailable &&
-                                                    !slot.isBooked ? (
+                                                    {isFree ? (
                                                         <span className="flex items-center text-green-600 text-sm gap-1">
                                                             <CheckCircle2 className="w-4 h-4" />{" "}
                                                             Available
@@ -287,17 +345,14 @@ const Mentor = () => {
 
                                                     <button
                                                         onClick={() =>
+                                                            isFree &&
                                                             handleBookClick(
                                                                 slot
                                                             )
                                                         }
-                                                        disabled={
-                                                            !slot.isAvailable ||
-                                                            slot.isBooked
-                                                        }
+                                                        disabled={!isFree}
                                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                                                            slot.isAvailable &&
-                                                            !slot.isBooked
+                                                            isFree
                                                                 ? "bg-blue-600 text-white hover:bg-blue-700"
                                                                 : "bg-gray-200 text-gray-400 cursor-not-allowed"
                                                         }`}
@@ -317,7 +372,7 @@ const Mentor = () => {
                         </div>
                     )}
 
-                    {/* ======= About Tab ======= */}
+                    {/* About */}
                     {activeTab === "about" && (
                         <div className="grid grid-cols-1 gap-3">
                             <h3 className="text-lg font-semibold text-gray-800 mb-2">
@@ -330,6 +385,7 @@ const Mentor = () => {
                                         Designation: {mentor.designation ?? "—"}
                                     </span>
                                 </p>
+
                                 <p className="mb-2 flex items-center gap-2">
                                     <Layers className="w-4 h-4 text-gray-500" />
                                     <span>
@@ -339,6 +395,7 @@ const Mentor = () => {
                                             : "—"}
                                     </span>
                                 </p>
+
                                 <p className="mb-2 flex items-center gap-2">
                                     <BadgeCheck className="w-4 h-4 text-gray-500" />
                                     <span>
@@ -348,6 +405,7 @@ const Mentor = () => {
                                             : "—"}
                                     </span>
                                 </p>
+
                                 <p className="mb-2 flex items-center gap-2">
                                     <Star className="w-4 h-4 text-gray-500" />
                                     <span>
@@ -355,6 +413,7 @@ const Mentor = () => {
                                         {mentor.yearsOfExperience ?? "—"} years
                                     </span>
                                 </p>
+
                                 <p className="mb-2 flex items-center gap-2">
                                     <DollarSign className="w-4 h-4 text-gray-500" />
                                     <span>
@@ -364,6 +423,7 @@ const Mentor = () => {
                                             : "—"}
                                     </span>
                                 </p>
+
                                 <p className="mb-2 text-gray-500 text-sm">
                                     Joined: {joinedDate}
                                 </p>
@@ -371,7 +431,7 @@ const Mentor = () => {
                         </div>
                     )}
 
-                    {/* ======= Reviews Tab ======= */}
+                    {/* Reviews */}
                     {activeTab === "reviews" && (
                         <div className="grid grid-cols-1 gap-3">
                             <h3 className="text-lg font-semibold text-gray-800 mb-2">
@@ -425,7 +485,7 @@ const Mentor = () => {
                 </div>
             </div>
 
-            {/* ===== Booking Popup ===== */}
+            {/* Booking Popup */}
             {showBookingPopup && selectedSlot && (
                 <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
                     <div className="bg-white rounded-xl shadow-xl p-6 w-96 relative">
@@ -457,13 +517,10 @@ const Mentor = () => {
                             <DollarSign className="inline w-4 h-4 text-green-600 mr-1" />
                             Total Payment: $
                             {(() => {
-                                const start = parseInt(
-                                    selectedSlot.startTime.split(":")[0]
+                                const duration = parseDurationHours(
+                                    selectedSlot.startTime,
+                                    selectedSlot.endTime
                                 );
-                                const end = parseInt(
-                                    selectedSlot.endTime.split(":")[0]
-                                );
-                                const duration = Math.max(1, end - start);
                                 return (mentor.hourlyRate || 0) * duration;
                             })()}
                         </p>

@@ -13,6 +13,8 @@ import RegisterUser from "./pages/Register";
 import Dashboard from "./pages/Dahsboard";
 import Discover from "./pages/Discover";
 import Mentor from "./pages/Mentor";
+import Bookings from "./pages/Bookings";
+import Sessions from "./pages/Bookings";
 
 type ProtectedRouteParam = {
     children: any;
@@ -67,11 +69,10 @@ function App() {
                     }
                 >
                     <Route index element={<Navigate to="/events" replace />} />
-                    <Route path="dashboard" element={<Dashboard />} />
                     <Route path="discover" element={<Discover />} />
                     <Route path="mentor" element={<Mentor />} />
                     <Route path="events" element={<EventsList />} />
-                    <Route path="bookings" element={<BookingsList />} />
+                    <Route path="sessions" element={<Sessions />} />
                     <Route path="create-event" element={<CreateEvent />} />
                     <Route path="edit-event/:id" element={<UpdateEvent />} />
                 </Route>
