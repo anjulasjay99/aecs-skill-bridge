@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECR repositories for 4 services
+Resources:
+    UserRepo:
+        Type: AWS::ECR::Repository
+        Properties: { RepositoryName: user-service }
+    BookingRepo:
+        Type: AWS::ECR::Repository
+        Properties: { RepositoryName: booking-service }
+    AvailabilityRepo:
+        Type: AWS::ECR::Repository
+        Properties: { RepositoryName: availability-service }
+    SearchRepo:
+        Type: AWS::ECR::Repository
+        Properties: { RepositoryName: search-service }

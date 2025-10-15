@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: mongodb-uri
+    namespace: skillbridge
+type: Opaque
+stringData:
+    # filled by workflow; placeholder ignored on apply --prune
+    uri: "REPLACED_BY_CI"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: user-service
+    namespace: skillbridge
+spec:
+    replicas: 1
+    selector: { matchLabels: { app: user-service } }
+    template:
+        metadata: { labels: { app: user-service } }
+        spec:
+            containers:
+                - name: user-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/user-service:latest
+                  ports: [{ containerPort: 3001 }]
+                  env:
+                      - { name: PORT, value: "3001" }
+                      - { name: DB_NAME, value: "user_db" }
+                      - name: MONGODB_URI
+                        valueFrom:
+                            secretKeyRef:
+                                name: mongodb-uri
+                                key: uri
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: user-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector: { app: user-service }
+    ports: [{ port: 3001, targetPort: 3001 }]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: booking-service
+    namespace: skillbridge
+spec:
+    replicas: 1
+    selector: { matchLabels: { app: booking-service } }
+    template:
+        metadata: { labels: { app: booking-service } }
+        spec:
+            containers:
+                - name: booking-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/booking-service:latest
+                  ports: [{ containerPort: 3002 }]
+                  env:
+                      - { name: PORT, value: "3002" }
+                      - { name: DB_NAME, value: "booking_db" }
+                      - name: MONGODB_URI
+                        valueFrom:
+                            secretKeyRef:
+                                name: mongodb-uri
+                                key: uri
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: booking-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector: { app: booking-service }
+    ports: [{ port: 3002, targetPort: 3002 }]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: availability-service
+    namespace: skillbridge
+spec:
+    replicas: 1
+    selector: { matchLabels: { app: availability-service } }
+    template:
+        metadata: { labels: { app: availability-service } }
+        spec:
+            containers:
+                - name: availability-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/availability-service:latest
+                  ports: [{ containerPort: 3003 }]
+                  env:
+                      - { name: PORT, value: "3003" }
+                      - { name: DB_NAME, value: "availability_db" }
+                      - name: MONGODB_URI
+                        valueFrom:
+                            secretKeyRef:
+                                name: mongodb-uri
+                                key: uri
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: availability-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector: { app: availability-service }
+    ports: [{ port: 3003, targetPort: 3003 }]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: search-service
+    namespace: skillbridge
+spec:
+    replicas: 1
+    selector: { matchLabels: { app: search-service } }
+    template:
+        metadata: { labels: { app: search-service } }
+        spec:
+            containers:
+                - name: search-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/search-service:latest
+                  ports: [{ containerPort: 3004 }]
+                  env:
+                      - { name: PORT, value: "3004" }
+                      - { name: DB_NAME, value: "user_db" }
+                      - name: MONGODB_URI
+                        valueFrom:
+                            secretKeyRef:
+                                name: mongodb-uri
+                                key: uri
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: search-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector: { app: search-service }
+    ports: [{ port: 3004, targetPort: 3004 }]

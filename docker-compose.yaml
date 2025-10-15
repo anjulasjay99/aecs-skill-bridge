@@ -1,0 +1,83 @@
+version: "3.9"
+
+services:
+    user-service:
+        build:
+            context: ./services/user-service
+            dockerfile: Dockerfile
+        container_name: user-service
+        ports:
+            - "3000:3000"
+        environment:
+            - PORT=3000
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=user_db
+        depends_on:
+            - mongo
+
+    availability-service:
+        build:
+            context: ./services/availability-service
+            dockerfile: Dockerfile
+        container_name: availability-service
+        ports:
+            - "3001:3001"
+        environment:
+            - PORT=3001
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=availability_db
+        depends_on:
+            - mongo
+
+    messaging-service:
+        build:
+            context: ./services/messaging-service
+            dockerfile: Dockerfile
+        container_name: messaging-service
+        ports:
+            - "3002:3002"
+        environment:
+            - PORT=3002
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=conversation_db
+        depends_on:
+            - mongo
+
+    search-service:
+        build:
+            context: ./services/search-service
+            dockerfile: Dockerfile
+        container_name: search-service
+        ports:
+            - "3003:3003"
+        environment:
+            - PORT=3003
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=user_db
+        depends_on:
+            - mongo
+
+    booking-service:
+        build:
+            context: ./services/booking-service
+            dockerfile: Dockerfile
+        container_name: booking-service
+        ports:
+            - "3004:3004"
+        environment:
+            - PORT=3004
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=booking_db
+        depends_on:
+            - mongo
+
+    mongo:
+        image: mongo:7
+        container_name: mongodb
+        ports:
+            - "27018:27017"
+        volumes:
+            - mongo_data:/data/db
+
+volumes:
+    mongo_data:
