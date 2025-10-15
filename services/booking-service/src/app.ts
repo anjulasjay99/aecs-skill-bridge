@@ -2,11 +2,13 @@ import express from "express";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import cors from "cors";
 
 dotenv.config();
-const app = express();
 
+const app = express();
 app.use(express.json());
+app.use(cors());
 
 const MONGO_URI = process.env.MONGODB_URI ?? "";
 const DB_NAME = process.env.DB_NAME ?? "";

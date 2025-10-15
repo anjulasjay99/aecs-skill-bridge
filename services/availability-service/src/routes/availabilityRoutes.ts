@@ -4,6 +4,7 @@ import {
     getAvailabilitySlots,
     updateAvailabilitySlot,
     deleteAvailabilitySlot,
+    getSlotById,
 } from "../services/availabilityService.js";
 
 const router = Router();
@@ -26,6 +27,18 @@ router.get("/:mentorId", async (req, res) => {
         });
 
         res.status(200).json({ mentorId, slots });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+router.get("/slots/:slotId", async (req, res) => {
+    const { slotId } = req.params;
+
+    try {
+        const slot = await getSlotById(slotId);
+
+        res.status(200).json({ slot });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
