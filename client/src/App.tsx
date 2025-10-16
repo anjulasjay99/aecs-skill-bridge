@@ -3,17 +3,11 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Theme } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 import "./styles/tailwind.css";
-import CreateEvent from "./pages/CreateEvent";
 import AppLayout from "./components/AppLayout";
-import EventsList from "./pages/EventList";
-import BookingsList from "./pages/BookingList";
-import UpdateEvent from "./pages/UpdateEvent";
 import Login from "./pages/Login";
 import RegisterUser from "./pages/Register";
-import Dashboard from "./pages/Dahsboard";
 import Discover from "./pages/Discover";
 import Mentor from "./pages/Mentor";
-import Bookings from "./pages/Bookings";
 import Sessions from "./pages/Bookings";
 
 type ProtectedRouteParam = {
@@ -68,13 +62,13 @@ function App() {
                         </ProtectedRoute>
                     }
                 >
-                    <Route index element={<Navigate to="/events" replace />} />
+                    <Route
+                        index
+                        element={<Navigate to="/discover" replace />}
+                    />
                     <Route path="discover" element={<Discover />} />
                     <Route path="mentor" element={<Mentor />} />
-                    <Route path="events" element={<EventsList />} />
                     <Route path="sessions" element={<Sessions />} />
-                    <Route path="create-event" element={<CreateEvent />} />
-                    <Route path="edit-event/:id" element={<UpdateEvent />} />
                 </Route>
 
                 {/* Catch all route - redirect to login if not authenticated */}
