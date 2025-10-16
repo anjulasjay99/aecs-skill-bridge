@@ -49,3 +49,7 @@ export const authUser = async (email: string, password: string) => {
         throw new APIError("Invalid credentials", 400);
     }
 };
+
+export const getUserById = async (userId: string) => {
+    return await UserDB.findOne({ _id: userId });
+};

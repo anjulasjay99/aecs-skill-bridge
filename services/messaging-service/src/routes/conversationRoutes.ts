@@ -19,21 +19,36 @@ router.get("/", async (req, res) => {
                 .json({ message: "Missing participants in query" });
         }
 
-        // Split participants (can be one or many)
+        // Parse participants list
         const participantList = (participants as string)
             .split(",")
-            .map((p) => p.trim());
+            .map((p) => p.trim())
+            .filter(Boolean);
 
-        // Find all conversations containing at least one of these participants
-        const conversations = await Conversation.find({
-            participants: { $in: participantList },
-        }).lean();
+        let query = {};
 
-        if (!conversations || conversations.length === 0) {
-            return res.status(200).json({ conversations: null });
+        if (participantList.length === 1) {
+            // ✅ If only one user — return all their conversations
+            query = {
+                participants: participantList[0],
+            };
+        } else {
+            // ✅ If multiple users — return only conversations that include *all* and only them
+            query = {
+                participants: { $all: participantList },
+                $expr: {
+                    $eq: [{ $size: "$participants" }, participantList.length],
+                },
+            };
         }
 
-        // Attach messages to each conversation
+        const conversations = await Conversation.find(query).lean();
+
+        if (!conversations || conversations.length === 0) {
+            return res.status(200).json({ conversations: [] });
+        }
+
+        // Attach messages
         const populatedConversations = await Promise.all(
             conversations.map(async (conv) => {
                 const messages = await Message.find({

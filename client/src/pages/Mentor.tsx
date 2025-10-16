@@ -22,6 +22,7 @@ import {
     DollarSign,
     X,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface Slot {
     _id: string;
@@ -59,6 +60,7 @@ const parseDurationHours = (start: string, end: string) => {
 };
 
 const Mentor = () => {
+    const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const mentorIdFromQuery = searchParams.get("id");
 
@@ -163,6 +165,10 @@ const Mentor = () => {
         [mentor?.createdAt]
     );
 
+    const openMessages = () => {
+        navigate(`/messages?userId=${mentor.userId?._id}`);
+    };
+
     const handleBookClick = (slot: Slot) => {
         setSelectedSlot(slot);
         setShowBookingPopup(true);
@@ -260,7 +266,10 @@ const Mentor = () => {
                             {mentor.bio}
                         </p>
                         <div className="mt-3">
-                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                            <button
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                                onClick={() => openMessages()}
+                            >
                                 <MessageSquare className="w-4 h-4" />
                                 Message
                             </button>

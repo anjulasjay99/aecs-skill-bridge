@@ -106,7 +106,7 @@ const Login = () => {
                 .then((res) => {
                     const user = jwtDecode(res.data.token);
                     localStorage.setItem("user", JSON.stringify(user));
-                    navigate("/events");
+                    navigate("/discover");
                 })
                 .catch((error) => {
                     console.log(error);
