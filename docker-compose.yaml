@@ -71,6 +71,23 @@ services:
         depends_on:
             - mongo
 
+    file-service:
+        build:
+            context: ./services/file-service
+            dockerfile: Dockerfile
+        container_name: file-service
+        ports:
+            - "3005:3005"
+        environment:
+            - PORT=3005
+            - MONGODB_URI=mongodb://mongo:27017
+            - DB_NAME=file_db
+            - REGION=ap-southeast-1
+            - ACCESS_KEY_ID=
+            - SECRET_ACCESS_KEY=
+        depends_on:
+            - mongo
+
     mongo:
         image: mongo:7
         container_name: mongodb

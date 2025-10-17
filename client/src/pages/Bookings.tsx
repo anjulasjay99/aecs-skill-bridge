@@ -245,6 +245,12 @@ const Sessions = () => {
                                                     : "Pending"}
                                             </td>
                                             <td className="py-3 px-4 text-sm">
+                                                <Link
+                                                    to={`/session?slotId=${booking.slotId}`}
+                                                    className="text-green-600 hover:underline"
+                                                >
+                                                    View
+                                                </Link>
                                                 <button
                                                     onClick={() =>
                                                         openCancelModal(booking)

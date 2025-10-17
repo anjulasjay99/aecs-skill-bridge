@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import io from "socket.io-client";
 import axios from "axios";
 import { Loader } from "lucide-react";
-import { APIURL, MESSAGING_SERVICE, SEARCH_SERVICE } from "../environments/env";
+import { APIURL, MESSAGING_SERVICE } from "../environments/env";
 
 interface Message {
     _id?: string;
@@ -28,6 +29,13 @@ interface User {
     email: string;
 }
 
+const SOCKET_CONV_EVENTS = [
+    "conversationLoaded",
+    "conversation",
+    "roomReady",
+    "joinedRoom",
+];
+
 const Messages = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -35,213 +43,272 @@ const Messages = () => {
 
     const [loggedUserId, setLoggedUserId] = useState<string | null>(null);
     const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [userCache, setUserCache] = useState<Record<string, User>>({});
     const [activeConversation, setActiveConversation] =
         useState<Conversation | null>(null);
+    const [userCache, setUserCache] = useState<Record<string, User>>({});
     const [message, setMessage] = useState("");
     const [loading, setLoading] = useState(true);
 
     const socketRef = useRef<any>(null);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const joinTimeoutRef = useRef<any>(null);
 
-    // Scroll to bottom helper
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // ---------------- SOCKET SETUP ----------------
+    // ---------- Socket setup ----------
     useEffect(() => {
         const socket = io(MESSAGING_SERVICE, { transports: ["websocket"] });
         socketRef.current = socket;
 
-        // Single listener setup
         const handleReceive = (msg: Message) => {
             setActiveConversation((prev) => {
-                if (!prev) return prev;
-                if (msg.conversationId !== prev._id) return prev;
-
-                // prevent duplicates
-                if (
-                    prev.messages.some(
-                        (m) =>
-                            m._id === msg._id ||
-                            (m.content === msg.content &&
-                                m.senderId === msg.senderId &&
-                                m.receiverId === msg.receiverId)
-                    )
-                )
-                    return prev;
-
+                if (!prev || msg.conversationId !== prev._id) return prev;
+                // prevent dups
+                const exists = prev.messages.some(
+                    (m) =>
+                        m._id === msg._id ||
+                        (m.content === msg.content &&
+                            m.senderId === msg.senderId &&
+                            m.receiverId === msg.receiverId &&
+                            !m._id)
+                );
+                if (exists) return prev;
                 return { ...prev, messages: [...prev.messages, msg] };
             });
 
-            // move updated conversation to top
             setConversations((prev) => {
                 const updated = prev.map((c) =>
                     c._id === msg.conversationId
                         ? { ...c, messages: [...c.messages, msg] }
                         : c
                 );
-                return updated.sort(
-                    (a, b) =>
-                        new Date(
-                            b.messages[b.messages.length - 1]?.createdAt ||
-                                b.createdAt
-                        ).getTime() -
-                        new Date(
-                            a.messages[a.messages.length - 1]?.createdAt ||
-                                a.createdAt
-                        ).getTime()
-                );
+                return updated;
             });
         };
 
         socket.on("receiveMessage", handleReceive);
+
+        // accept any of the possible "conversation ready" events
+        const handleAnyConversation = (conv: Conversation) => {
+            if (!conv || !conv._id) return;
+            setActiveConversation(conv);
+            setConversations((prev) => {
+                const idx = prev.findIndex((c) => c._id === conv._id);
+                if (idx === -1) return [conv, ...prev];
+                const copy = [...prev];
+                copy[idx] = conv;
+                return copy;
+            });
+            setLoading(false);
+            if (joinTimeoutRef.current) {
+                clearTimeout(joinTimeoutRef.current);
+                joinTimeoutRef.current = null;
+            }
+        };
+
+        SOCKET_CONV_EVENTS.forEach((evt) =>
+            socket.on(evt, handleAnyConversation)
+        );
+
         return () => {
             socket.off("receiveMessage", handleReceive);
+            SOCKET_CONV_EVENTS.forEach((evt) =>
+                socket.off(evt, handleAnyConversation)
+            );
             socket.disconnect();
         };
     }, []);
 
-    // ---------------- LOAD LOGGED USER ----------------
+    // ---------- Load logged user ----------
     useEffect(() => {
         const userData = localStorage.getItem("user");
         const id = userData ? JSON.parse(userData)?.user?._id : null;
         setLoggedUserId(id);
     }, []);
 
-    // ---------------- FETCH CONVERSATIONS ----------------
+    // ---------- Helpers ----------
+    const preloadUser = async (id: string) => {
+        if (!id || userCache[id]) return;
+        try {
+            const res = await axios.get(`${APIURL}/users/${id}`);
+            setUserCache((prev) => ({ ...prev, [id]: res.data.user }));
+        } catch {
+            setUserCache((prev) => ({
+                ...prev,
+                [id]: {
+                    _id: id,
+                    firstName: "Unknown",
+                    lastName: "",
+                    email: "",
+                },
+            }));
+        }
+    };
+
     const fetchConversations = async (userId: string) => {
         try {
-            setLoading(true);
             const res = await axios.get(
                 `${MESSAGING_SERVICE}/conversations?participants=${userId}`
             );
-            let data: Conversation[] = res.data.conversations || [];
-
-            // Sort by most recent message
-            data = data.sort(
-                (a, b) =>
-                    new Date(
-                        b.messages[b.messages.length - 1]?.createdAt ||
-                            b.createdAt
-                    ).getTime() -
-                    new Date(
-                        a.messages[a.messages.length - 1]?.createdAt ||
-                            a.createdAt
-                    ).getTime()
-            );
+            const data: Conversation[] = res.data.conversations || [];
             setConversations(data);
-
-            // Preload mentor/user names
-            const uniqueIds = Array.from(
+            // preload names for sidebar
+            const others = Array.from(
                 new Set(
-                    data.flatMap((c: Conversation) =>
-                        c.participants.filter((id) => id !== userId)
+                    data.flatMap((c) =>
+                        c.participants.filter((pid) => pid !== userId)
                     )
                 )
             );
-
-            const usersMap: Record<string, User> = { ...userCache };
-            await Promise.all(
-                uniqueIds.map(async (id) => {
-                    if (!usersMap[id]) {
-                        try {
-                            const userRes = await axios.get(
-                                `${APIURL}/users/${id}`
-                            );
-                            usersMap[id] = userRes.data.user || {
-                                _id: id,
-                                firstName: "Unknown",
-                                lastName: "",
-                                email: "",
-                            };
-                        } catch {
-                            usersMap[id] = {
-                                _id: id,
-                                firstName: "Unknown",
-                                lastName: "",
-                                email: "",
-                            };
-                        }
-                    }
-                })
-            );
-            setUserCache(usersMap);
-
-            // ✅ If no userId in URL, auto-select the first chat
-            if (!chatUserId && data.length > 0) {
-                const firstOtherId = data[0].participants.find(
-                    (id) => id !== userId
-                );
-                navigate(`/messages?userId=${firstOtherId}`);
-            }
-        } catch (err) {
-            console.error("Error loading conversations:", err);
-        } finally {
+            await Promise.all(others.map(preloadUser));
+            setLoading(false);
+        } catch (e) {
+            console.error("fetchConversations error:", e);
             setLoading(false);
         }
     };
 
-    // ---------------- ACTIVE CHAT SETUP ----------------
+    const findPairConversation = (a: string, b: string) =>
+        conversations.find(
+            (c) => c.participants.includes(a) && c.participants.includes(b)
+        ) || null;
+
+    // ---------- Initial load ----------
     useEffect(() => {
         if (loggedUserId) fetchConversations(loggedUserId);
     }, [loggedUserId]);
 
+    // ---------- Join or create via socket (server-managed) ----------
     useEffect(() => {
-        if (chatUserId && conversations.length > 0 && loggedUserId) {
-            const conv = conversations.find(
-                (c) =>
-                    c.participants.includes(loggedUserId) &&
-                    c.participants.includes(chatUserId)
-            );
-            setActiveConversation(conv || null);
-            if (conv)
-                socketRef.current.emit("joinChat", loggedUserId, chatUserId);
-        }
-    }, [chatUserId, conversations, loggedUserId]);
+        const socket = socketRef.current;
+        if (!socket || !loggedUserId || !chatUserId) return;
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [activeConversation?.messages]);
+        setLoading(true);
+        preloadUser(chatUserId);
 
-    // ---------------- SEND MESSAGE ----------------
+        // emit in both common shapes (compatible with different server handlers)
+        try {
+            socket.emit("joinChat", loggedUserId, chatUserId);
+        } catch {}
+        try {
+            socket.emit("joinChat", {
+                senderId: loggedUserId,
+                receiverId: chatUserId,
+            });
+        } catch {}
+
+        // if server doesn't emit a conversation promptly, fall back to REST to locate it
+        if (joinTimeoutRef.current) clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = setTimeout(async () => {
+            // try to locate conversation via REST
+            try {
+                const res = await axios.get(
+                    `${MESSAGING_SERVICE}/conversations?participants=${loggedUserId}`
+                );
+                const data: Conversation[] = res.data.conversations || [];
+                setConversations(data);
+                const conv = data.find(
+                    (c) =>
+                        c.participants.includes(loggedUserId) &&
+                        c.participants.includes(chatUserId)
+                );
+                if (conv) {
+                    setActiveConversation(conv);
+                    setLoading(false);
+                    return;
+                }
+            } catch (e) {
+                console.error("fallback conversations fetch error:", e);
+            }
+            // still nothing—create a stub view with the other user's name so the UI isn't empty
+            setActiveConversation({
+                _id: "pending-" + loggedUserId + "-" + chatUserId,
+                participants: [loggedUserId, chatUserId],
+                messages: [],
+                createdAt: new Date().toISOString(),
+            });
+            // also show a stub in sidebar so their name appears
+            setConversations((prev) => {
+                const exists = prev.some(
+                    (c) =>
+                        c.participants.includes(loggedUserId) &&
+                        c.participants.includes(chatUserId)
+                );
+                if (exists) return prev;
+                return [
+                    {
+                        _id: "pending-" + loggedUserId + "-" + chatUserId,
+                        participants: [loggedUserId, chatUserId],
+                        messages: [],
+                        createdAt: new Date().toISOString(),
+                    },
+                    ...prev,
+                ];
+            });
+            setLoading(false);
+        }, 1200); // small delay to give the socket a chance first
+    }, [chatUserId, loggedUserId]);
+
+    // ---------- Send message ----------
     const sendMessage = () => {
         if (
             !message.trim() ||
-            !activeConversation ||
             !loggedUserId ||
-            !chatUserId
+            !chatUserId ||
+            !socketRef.current
         )
             return;
+
+        const convId = activeConversation?._id?.startsWith("pending-")
+            ? undefined
+            : activeConversation?._id;
 
         const msg: Message = {
             senderId: loggedUserId,
             receiverId: chatUserId,
             content: message.trim(),
-            conversationId: activeConversation._id,
+            conversationId: convId,
         };
 
         socketRef.current.emit("sendMessage", msg);
-        setMessage("");
+        setMessage(""); // clear input
     };
 
-    // ---------------- UI ----------------
+    useEffect(() => {
+        scrollToBottom();
+    }, [activeConversation?.messages]);
+
+    // ---------- Derived UI helpers ----------
+    const sortedConversations = useMemo(() => {
+        return [...conversations].sort((a, b) => {
+            const aTs = new Date(
+                a.messages[a.messages.length - 1]?.createdAt || a.createdAt
+            ).getTime();
+            const bTs = new Date(
+                b.messages[b.messages.length - 1]?.createdAt || b.createdAt
+            ).getTime();
+            return bTs - aTs;
+        });
+    }, [conversations]);
+
+    // ---------- UI ----------
     return (
         <div className="flex h-screen bg-gray-100">
-            {/* LEFT PANE (scrollable) */}
+            {/* LEFT PANEL */}
             <div className="w-1/4 bg-white border-r border-gray-200 flex flex-col">
                 <div className="flex-1 overflow-y-auto">
-                    {loading ? (
+                    {loading && conversations.length === 0 ? (
                         <div className="p-4 text-gray-500 flex items-center">
                             <Loader className="animate-spin mr-2" /> Loading...
                         </div>
-                    ) : conversations.length === 0 ? (
+                    ) : sortedConversations.length === 0 ? (
                         <p className="text-gray-500 p-4">
                             No conversations yet.
                         </p>
                     ) : (
-                        conversations.map((conv) => {
+                        sortedConversations.map((conv) => {
                             const otherId = conv.participants.find(
                                 (id) => id !== loggedUserId
                             );
@@ -267,7 +334,7 @@ const Messages = () => {
                                     <p className="font-medium text-gray-800 truncate">
                                         {otherUser
                                             ? `${otherUser.firstName} ${otherUser.lastName}`
-                                            : otherId}
+                                            : "Loading..."}
                                     </p>
                                     <p className="text-gray-500 text-sm truncate">
                                         {lastMsg
@@ -281,7 +348,7 @@ const Messages = () => {
                 </div>
             </div>
 
-            {/* RIGHT PANE (scrollable) */}
+            {/* RIGHT PANEL */}
             <div className="flex-1 flex flex-col bg-gray-100">
                 <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
                     {loading ? (
@@ -289,29 +356,34 @@ const Messages = () => {
                             <Loader className="animate-spin mr-2" /> Loading
                             chat...
                         </div>
-                    ) : activeConversation &&
-                      activeConversation.messages.length > 0 ? (
-                        activeConversation.messages.map((msg, index) => (
-                            <div
-                                key={msg._id || index}
-                                className={`p-2 rounded-lg max-w-xs ${
-                                    msg.senderId === loggedUserId
-                                        ? "bg-blue-500 text-white self-end"
-                                        : "bg-white text-gray-800 self-start"
-                                }`}
-                            >
-                                {msg.content}
-                            </div>
-                        ))
+                    ) : activeConversation ? (
+                        activeConversation.messages.length > 0 ? (
+                            activeConversation.messages.map((msg, index) => (
+                                <div
+                                    key={msg._id || index}
+                                    className={`p-2 rounded-lg max-w-xs ${
+                                        msg.senderId === loggedUserId
+                                            ? "bg-blue-500 text-white self-end"
+                                            : "bg-white text-gray-800 self-start"
+                                    }`}
+                                >
+                                    {msg.content}
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-gray-500 text-center mt-4">
+                                Say hi 👋 to start the conversation!
+                            </p>
+                        )
                     ) : (
                         <p className="text-gray-500 text-center mt-4">
-                            No messages yet. Start chatting!
+                            Select a chat to start messaging.
                         </p>
                     )}
                     <div ref={messagesEndRef}></div>
                 </div>
 
-                {/* Input */}
+                {/* INPUT */}
                 {chatUserId && (
                     <div className="p-4 bg-white border-t flex items-center flex-shrink-0">
                         <input
