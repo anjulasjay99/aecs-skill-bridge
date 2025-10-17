@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authUser, createUser } from "../services/userService.js";
+import { authUser, createUser, getUserById } from "../services/userService.js";
 import bcrypt from "bcryptjs";
 import { Role } from "../types/Enums.js";
 import { createMentorProfile } from "../services/mentorService.js";
@@ -7,8 +7,19 @@ import { Types } from "mongoose";
 
 const router = Router();
 
-router.get("/", (_req, res) => {
-    res.json({ message: "User endpoint working" });
+router.get("/:userId", async (_req, res) => {
+    const { userId } = _req.params;
+
+    try {
+        const user = await getUserById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        res.status(200).json({ user });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
 router.post("/login", async (_req, res) => {

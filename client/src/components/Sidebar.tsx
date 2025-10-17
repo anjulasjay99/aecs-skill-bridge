@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, Calendar, LogOut, Compass } from "lucide-react";
+import { Home, Calendar, LogOut, Compass, MessageCircle } from "lucide-react";
 
 const Sidebar = () => {
     const navigate = useNavigate();
@@ -44,6 +44,17 @@ const Sidebar = () => {
                         >
                             <Calendar className="w-5 h-5 mr-3" />
                             <span>Sessions</span>
+                        </Link>
+                        <Link
+                            to="/messages"
+                            className={`flex items-center px-3 py-2 rounded-lg ${
+                                isActive("/messages")
+                                    ? "text-white bg-blue-600"
+                                    : "text-gray-500 hover:bg-gray-100"
+                            }`}
+                        >
+                            <MessageCircle className="w-5 h-5 mr-3" />
+                            <span>Messages</span>
                         </Link>
                     </nav>
                 </div>
