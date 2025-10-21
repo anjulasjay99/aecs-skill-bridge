@@ -15,9 +15,10 @@ spec:
         spec:
             containers:
                 - name: availability-service
-                  image: skillbridge-availability-service:latest
+                  image: skillbridge-availability-service
+                  imagePullPolicy: Never
                   ports:
-                      - containerPort: 3000
+                      - containerPort: 3001
                   envFrom:
                       - configMapRef:
                             name: availability-env
@@ -31,5 +32,5 @@ spec:
     selector:
         app: availability-service
     ports:
-        - port: 3000
-          targetPort: 3000
+        - port: 3001
+          targetPort: 3001

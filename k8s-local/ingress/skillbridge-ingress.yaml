@@ -1,16 +1,13 @@
-# skillbridge-ingress.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
     name: skillbridge-ingress
     annotations:
-        nginx.ingress.kubernetes.io/rewrite-target: /
-        nginx.ingress.kubernetes.io/websocket-services: "messaging-service"
+        nginx.ingress.kubernetes.io/websocket-services: messaging-service
 spec:
     ingressClassName: nginx
     rules:
-        - host: skillbridge.local
-          http:
+        - http:
               paths:
                   - path: /users
                     pathType: Prefix

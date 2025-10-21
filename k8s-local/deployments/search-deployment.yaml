@@ -15,9 +15,10 @@ spec:
         spec:
             containers:
                 - name: search-service
-                  image: skillbridge-search-service:latest
+                  image: skillbridge-search-service
+                  imagePullPolicy: Never
                   ports:
-                      - containerPort: 3000
+                      - containerPort: 3003
                   envFrom:
                       - configMapRef:
                             name: search-env
@@ -31,5 +32,5 @@ spec:
     selector:
         app: search-service
     ports:
-        - port: 3000
-          targetPort: 3000
+        - port: 3003
+          targetPort: 3003
