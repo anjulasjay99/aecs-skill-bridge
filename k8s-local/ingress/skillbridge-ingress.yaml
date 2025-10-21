@@ -4,11 +4,29 @@ metadata:
     name: skillbridge-ingress
     annotations:
         nginx.ingress.kubernetes.io/websocket-services: messaging-service
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/connection-proxy-header: "keep-alive"
+        nginx.ingress.kubernetes.io/upgrade-insecure-requests: "true"
 spec:
     ingressClassName: nginx
     rules:
         - http:
               paths:
+                  - path: /socket.io
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: messaging-service
+                            port:
+                                number: 3002
+                  - path: /conversations
+                    pathType: Prefix
+                    backend:
+                        service:
+                            name: messaging-service
+                            port:
+                                number: 3002
                   - path: /users
                     pathType: Prefix
                     backend:
@@ -23,14 +41,7 @@ spec:
                             name: availability-service
                             port:
                                 number: 3001
-                  - path: /messaging
-                    pathType: Prefix
-                    backend:
-                        service:
-                            name: messaging-service
-                            port:
-                                number: 3002
-                  - path: /search
+                  - path: /mentors
                     pathType: Prefix
                     backend:
                         service:

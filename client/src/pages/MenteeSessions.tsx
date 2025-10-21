@@ -2,11 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { Loader, X, AlertTriangle } from "lucide-react";
-import {
-    BOOKING_SERVICE,
-    SEARCH_SERVICE,
-    AVAIL_SERVICE,
-} from "../environments/env";
+import { API_BASE_URL } from "../environments/env";
 
 interface Booking {
     _id: string;
@@ -39,7 +35,7 @@ interface Slot {
     isAvailable: boolean;
 }
 
-const Sessions = () => {
+const MenteeSessions = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [mentors, setMentors] = useState<Record<string, Mentor>>({});
     const [slots, setSlots] = useState<Record<string, Slot>>({});
@@ -59,7 +55,7 @@ const Sessions = () => {
             const menteeId = userData ? JSON.parse(userData)?.user?._id : null;
 
             const res = await axios.get(
-                `${BOOKING_SERVICE}/bookings?menteeId=${menteeId}`
+                `${API_BASE_URL}/bookings?menteeId=${menteeId}`
             );
             const data = res.data.bookings || [];
             setBookings(data);
@@ -67,14 +63,14 @@ const Sessions = () => {
             // Fetch mentors and slots concurrently
             const mentorPromises = data.map(async (booking: Booking) => {
                 const mentorRes = await axios.get(
-                    `${SEARCH_SERVICE}/mentors/${booking.mentorId}`
+                    `${API_BASE_URL}/mentors/${booking.mentorId}`
                 );
                 return { id: booking.mentorId, mentor: mentorRes.data.mentor };
             });
 
             const slotPromises = data.map(async (booking: Booking) => {
                 const slotRes = await axios.get(
-                    `${AVAIL_SERVICE}/availability/slots/${booking.slotId}`
+                    `${API_BASE_URL}/availability/slots/${booking.slotId}`
                 );
                 return { id: booking.slotId, slot: slotRes.data.slot };
             });
@@ -110,10 +106,10 @@ const Sessions = () => {
         setCancelLoading(true);
         try {
             await axios.delete(
-                `${BOOKING_SERVICE}/bookings/${selectedBooking._id}`
+                `${API_BASE_URL}/bookings/${selectedBooking._id}`
             );
             closeCancelModal();
-            await fetchBookings(); // refresh after cancel
+            await fetchBookings();
         } catch (err) {
             console.error(err);
             setError("Failed to cancel booking. Please try again later.");
@@ -136,14 +132,14 @@ const Sessions = () => {
         fetchBookings();
     }, []);
 
-    const formatSlot = (slot: Slot | undefined) => {
+    const formatDate = (slot: Slot | undefined) => {
         if (!slot) return "Loading...";
         const date = new Date(slot.date).toLocaleDateString("en-US", {
             year: "numeric",
             month: "short",
             day: "numeric",
         });
-        return `${date}`;
+        return date;
     };
 
     return (
@@ -172,28 +168,28 @@ const Sessions = () => {
                     </p>
                 ) : (
                     <div className="bg-white rounded-lg overflow-hidden shadow">
-                        <table className="w-full">
+                        <table className="w-full border-collapse">
                             <thead className="bg-blue-50">
                                 <tr>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600 w-10">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600 w-10">
                                         #
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Mentor
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Date
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Time
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Payment
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Status
                                     </th>
-                                    <th className="text-left py-3 px-4 font-medium text-sm text-gray-600">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
                                         Actions
                                     </th>
                                 </tr>
@@ -205,11 +201,11 @@ const Sessions = () => {
                                     return (
                                         <tr
                                             key={booking._id}
-                                            className={
+                                            className={`${
                                                 index % 2 === 0
                                                     ? "bg-white"
                                                     : "bg-gray-50"
-                                            }
+                                            } hover:bg-blue-50 transition`}
                                         >
                                             <td className="py-3 px-4 text-sm text-gray-600">
                                                 {index + 1}
@@ -218,7 +214,7 @@ const Sessions = () => {
                                                 {mentor ? (
                                                     <Link
                                                         to={`/mentor?id=${mentor.userId._id}`}
-                                                        className="text-blue-600 hover:underline"
+                                                        className="text-blue-600 hover:underline font-medium"
                                                     >
                                                         {
                                                             mentor.userId
@@ -230,35 +226,47 @@ const Sessions = () => {
                                                     "Loading..."
                                                 )}
                                             </td>
-                                            <td className="py-3 px-4 text-sm">
-                                                {formatSlot(slot)}
+                                            <td className="py-3 px-4 text-sm text-gray-700">
+                                                {formatDate(slot)}
                                             </td>
-                                            <td className="py-3 px-4 text-sm">
-                                                {`${slot.startTime} - ${slot.endTime}`}
+                                            <td className="py-3 px-4 text-sm text-gray-700">
+                                                {slot
+                                                    ? `${slot.startTime} - ${slot.endTime}`
+                                                    : "—"}
                                             </td>
-                                            <td className="py-3 px-4 text-sm">
+                                            <td className="py-3 px-4 text-sm text-gray-700">
                                                 ${booking.payment}
                                             </td>
                                             <td className="py-3 px-4 text-sm">
-                                                {booking.isConfirmed
-                                                    ? "Confirmed"
-                                                    : "Pending"}
+                                                {booking.isConfirmed ? (
+                                                    <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                                                        Confirmed
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">
+                                                        Pending
+                                                    </span>
+                                                )}
                                             </td>
-                                            <td className="py-3 px-4 text-sm">
+                                            <td className="py-3 px-4 text-sm space-x-3">
                                                 <Link
                                                     to={`/session?slotId=${booking.slotId}`}
-                                                    className="text-green-600 hover:underline"
+                                                    className="text-blue-600 hover:underline font-medium"
                                                 >
                                                     View
                                                 </Link>
-                                                <button
-                                                    onClick={() =>
-                                                        openCancelModal(booking)
-                                                    }
-                                                    className="text-red-600 hover:text-red-800"
-                                                >
-                                                    Cancel
-                                                </button>
+                                                {!booking.isConfirmed && (
+                                                    <button
+                                                        onClick={() =>
+                                                            openCancelModal(
+                                                                booking
+                                                            )
+                                                        }
+                                                        className="text-red-600 hover:text-red-800 font-medium"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -268,6 +276,7 @@ const Sessions = () => {
                     </div>
                 )}
 
+                {/* Cancel Booking Modal */}
                 {showCancelModal && (
                     <div className="fixed inset-0 flex items-center justify-center z-50">
                         <div className="absolute inset-0 bg-black opacity-40"></div>
@@ -317,4 +326,4 @@ const Sessions = () => {
     );
 };
 
-export default Sessions;
+export default MenteeSessions;

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { SEARCH_SERVICE } from "../environments/env";
+import { API_BASE_URL } from "../environments/env";
 import {
     Loader2,
     UserCircle2,
@@ -89,7 +89,7 @@ const Discover = () => {
             if (rateFilter) params.hourlyRate = rateFilter;
 
             const res = await axios.get<MentorResponse>(
-                `${SEARCH_SERVICE}/mentors`,
+                `${API_BASE_URL}/mentors`,
                 { params }
             );
             const list = Array.isArray(res.data?.mentors)
