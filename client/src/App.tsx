@@ -9,6 +9,8 @@ import RegisterUser from "./pages/Register";
 import Discover from "./pages/Discover";
 import Mentor from "./pages/Mentor";
 import Sessions from "./pages/Bookings";
+import Messages from "./pages/Messages";
+import Session from "./pages/Session";
 
 type ProtectedRouteParam = {
     children: any;
@@ -69,6 +71,8 @@ function App() {
                     <Route path="discover" element={<Discover />} />
                     <Route path="mentor" element={<Mentor />} />
                     <Route path="sessions" element={<Sessions />} />
+                    <Route path="messages" element={<Messages />} />
+                    <Route path="session" element={<Session />} />
                 </Route>
 
                 {/* Catch all route - redirect to login if not authenticated */}

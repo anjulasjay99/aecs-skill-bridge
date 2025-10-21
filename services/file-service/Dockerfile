@@ -34,9 +34,9 @@ COPY --from=builder /app/dist ./dist
 
 # Environment
 ENV NODE_ENV=development
-ENV PORT=3002
+ENV PORT=3005
 # MONGODB_URI is injected by Kubernetes Secret at runtime
 
-EXPOSE 3002
+EXPOSE 3005
 
 CMD ["node", "dist/server.js"]
