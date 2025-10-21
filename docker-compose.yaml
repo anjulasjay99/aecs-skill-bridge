@@ -8,10 +8,8 @@ services:
         container_name: user-service
         ports:
             - "3000:3000"
-        environment:
-            - PORT=3000
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=user_db
+        env_file:
+            - ./services/user-service/.env
         depends_on:
             - mongo
 
@@ -22,10 +20,8 @@ services:
         container_name: availability-service
         ports:
             - "3001:3001"
-        environment:
-            - PORT=3001
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=availability_db
+        env_file:
+            - ./services/availability-service/.env
         depends_on:
             - mongo
 
@@ -36,10 +32,8 @@ services:
         container_name: messaging-service
         ports:
             - "3002:3002"
-        environment:
-            - PORT=3002
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=conversation_db
+        env_file:
+            - ./services/messaging-service/.env
         depends_on:
             - mongo
 
@@ -50,10 +44,8 @@ services:
         container_name: search-service
         ports:
             - "3003:3003"
-        environment:
-            - PORT=3003
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=user_db
+        env_file:
+            - ./services/search-service/.env
         depends_on:
             - mongo
 
@@ -64,10 +56,8 @@ services:
         container_name: booking-service
         ports:
             - "3004:3004"
-        environment:
-            - PORT=3004
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=booking_db
+        env_file:
+            - ./services/booking-service/.env
         depends_on:
             - mongo
 
@@ -78,13 +68,8 @@ services:
         container_name: file-service
         ports:
             - "3005:3005"
-        environment:
-            - PORT=3005
-            - MONGODB_URI=mongodb://mongo:27017
-            - DB_NAME=file_db
-            - REGION=ap-southeast-1
-            - ACCESS_KEY_ID=
-            - SECRET_ACCESS_KEY=
+        env_file:
+            - ./services/file-service/.env
         depends_on:
             - mongo
 
