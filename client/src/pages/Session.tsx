@@ -280,7 +280,7 @@ const Session = () => {
                                 onClick={() => openLiveSession()}
                             >
                                 <Code className="w-4 h-4" />
-                                Start Session
+                                Live Session
                             </button>
                         </div>
                     </div>

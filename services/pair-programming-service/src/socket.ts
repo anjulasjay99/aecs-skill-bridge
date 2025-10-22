@@ -5,6 +5,8 @@ import { log } from "./logger.js";
 export function createSignalingServer(httpServer: any, corsOrigins: string[]) {
     const io = new Server(httpServer, {
         cors: { origin: corsOrigins, credentials: true },
+        path: "/live",
+        transports: ["websocket", "polling"],
     });
 
     const roomState = new Map<string, Set<string>>(); // roomId -> socket IDs

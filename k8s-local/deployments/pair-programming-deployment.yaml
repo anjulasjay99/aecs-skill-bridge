@@ -1,0 +1,36 @@
+# pair-programming-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: pair-programming-service
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: pair-programming-service
+    template:
+        metadata:
+            labels:
+                app: pair-programming-service
+        spec:
+            containers:
+                - name: pair-programming-service
+                  image: skillbridge-pair-programming-service
+                  imagePullPolicy: Never
+                  ports:
+                      - containerPort: 3006
+                  envFrom:
+                      - configMapRef:
+                            name: pair-programming-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: pair-programming-service
+spec:
+    type: ClusterIP
+    selector:
+        app: pair-programming-service
+    ports:
+        - port: 3006
+          targetPort: 3006

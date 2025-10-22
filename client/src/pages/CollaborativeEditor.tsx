@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import io, { Socket } from "socket.io-client";
+import { API_BASE_URL } from "../environments/env";
 
-const SIGNALING_URL = "http://localhost:3006";
+const SIGNALING_URL = API_BASE_URL;
 const MONACO_PATH = "https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs";
 
 const LANGUAGES = [
@@ -62,7 +63,10 @@ const CollaborativeEditor = () => {
 
     // === Socket setup ===
     useEffect(() => {
-        const socket = io(SIGNALING_URL, { transports: ["websocket"] });
+        const socket = io(SIGNALING_URL, {
+            path: "/live",
+            transports: ["websocket"],
+        });
         socketRef.current = socket;
 
         socket.on("connect", () => {
@@ -233,7 +237,7 @@ const CollaborativeEditor = () => {
                             setTimeout(() => {
                                 isApplyingRef.current = false;
                             }, 1);
-                            addSys(`🌐 Language switched to ${newLang}`);
+                            //addSys(`🌐 Language switched to ${newLang}`);
                         }
                     }
                     break;
