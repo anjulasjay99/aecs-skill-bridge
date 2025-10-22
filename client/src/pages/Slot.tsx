@@ -13,6 +13,7 @@ import {
     Download,
     X,
     MessageSquare,
+    Code,
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import { RootState } from "../store/store";
@@ -231,6 +232,9 @@ const Slot = () => {
     const openMessages = () => {
         if (mentee?._id) navigate(`/messages?userId=${mentee._id}`);
     };
+    const openLiveSession = () => {
+        navigate(`/live-session?id=${slot?._id}`);
+    };
 
     if (loading) {
         return (
@@ -267,13 +271,20 @@ const Slot = () => {
                             <Clock className="w-4 h-4 ml-3" />
                             {slot.startTime} - {slot.endTime}
                         </div>
-                        <div className="mt-3">
+                        <div className="mt-3 flex flex-row gap-8">
                             <button
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
                                 onClick={() => openMessages()}
                             >
                                 <MessageSquare className="w-4 h-4" />
                                 Message
+                            </button>
+                            <button
+                                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
+                                onClick={() => openLiveSession()}
+                            >
+                                <Code className="w-4 h-4" />
+                                Live Session
                             </button>
                         </div>
                     </div>

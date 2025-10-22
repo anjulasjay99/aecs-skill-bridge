@@ -3,7 +3,7 @@ kind: Ingress
 metadata:
     name: skillbridge-ingress
     annotations:
-        nginx.ingress.kubernetes.io/websocket-services: "messaging-service"
+        nginx.ingress.kubernetes.io/websocket-services: "messaging-service,pair-programming-service"
         nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
         nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
         nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
@@ -61,3 +61,10 @@ spec:
                             name: file-service
                             port:
                                 number: 3005
+                  - path: /live/
+                    pathType: ImplementationSpecific
+                    backend:
+                        service:
+                            name: pair-programming-service
+                            port:
+                                number: 3006
