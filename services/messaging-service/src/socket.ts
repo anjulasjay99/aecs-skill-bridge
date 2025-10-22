@@ -4,7 +4,12 @@ import Conversation from "./models/Conversation.js";
 
 export const initSocket = (server: any) => {
     const io = new Server(server, {
-        cors: { origin: "*", methods: ["GET", "POST"] },
+        cors: {
+            origin: "*", // or specify your frontend URL
+            methods: ["GET", "POST"],
+        },
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
     });
 
     io.on("connection", (socket) => {

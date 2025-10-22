@@ -1,0 +1,36 @@
+# search-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: search-service
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: search-service
+    template:
+        metadata:
+            labels:
+                app: search-service
+        spec:
+            containers:
+                - name: search-service
+                  image: skillbridge-search-service
+                  imagePullPolicy: Never
+                  ports:
+                      - containerPort: 3003
+                  envFrom:
+                      - configMapRef:
+                            name: search-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: search-service
+spec:
+    type: ClusterIP
+    selector:
+        app: search-service
+    ports:
+        - port: 3003
+          targetPort: 3003

@@ -2,11 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import axios from "axios";
-import {
-    SEARCH_SERVICE,
-    AVAIL_SERVICE,
-    BOOKING_SERVICE,
-} from "../environments/env";
+import { API_BASE_URL } from "../environments/env";
 import {
     UserCircle2,
     Briefcase,
@@ -85,7 +81,7 @@ const Mentor = () => {
             try {
                 // ✅ correct endpoint (singular)
                 const res = await axios.get(
-                    `${SEARCH_SERVICE}/mentors/${mentorIdFromQuery}`
+                    `${API_BASE_URL}/mentors/${mentorIdFromQuery}`
                 );
                 setMentor(res.data?.mentor || null);
             } catch (err) {
@@ -104,7 +100,7 @@ const Mentor = () => {
             setLoadingSlots(true);
             try {
                 const availRes = await axios.get(
-                    `${AVAIL_SERVICE}/availability/${mentorId}`
+                    `${API_BASE_URL}/availability/${mentorId}`
                 );
                 const fetchedSlots: Slot[] = Array.isArray(availRes.data?.slots)
                     ? availRes.data.slots
@@ -115,7 +111,7 @@ const Mentor = () => {
                     fetchedSlots.map(async (slot) => {
                         try {
                             const bookingRes = await axios.get(
-                                `${BOOKING_SERVICE}/bookings`,
+                                `${API_BASE_URL}/bookings`,
                                 {
                                     params: { slotId: slot._id },
                                 }
@@ -166,7 +162,7 @@ const Mentor = () => {
     );
 
     const openMessages = () => {
-        navigate(`/messages?userId=${mentor.userId?._id}`);
+        navigate(`/messages?userId=${mentor!.userId?._id}`);
     };
 
     const handleBookClick = (slot: Slot) => {
@@ -180,7 +176,7 @@ const Mentor = () => {
         try {
             setBookingLoading(true);
 
-            // mentee from localStorage
+            // Get mentee id from localStorage
             const userData = localStorage.getItem("user");
             const menteeId = userData ? JSON.parse(userData)?.user?._id : null;
             if (!menteeId) {
@@ -188,42 +184,64 @@ const Mentor = () => {
                 return;
             }
 
+            // Compute total payment
             const duration = parseDurationHours(
                 selectedSlot.startTime,
                 selectedSlot.endTime
             );
             const payment = (mentor.hourlyRate || 0) * duration;
 
-            const payload = {
-                mentorId: mentor.userId?._id, // mentor id
-                menteeId, // from localStorage
-                slotId: selectedSlot._id, // selected slot
-                payment, // computed
+            // Step 1️⃣ — Create booking
+            const bookingPayload = {
+                mentorId: mentor.userId?._id, // mentor's userId
+                menteeId,
+                slotId: selectedSlot._id,
+                payment,
                 isConfirmed: false,
             };
 
-            const res = await axios.post(
-                `${BOOKING_SERVICE}/bookings`,
-                payload
+            const bookingRes = await axios.post(
+                `${API_BASE_URL}/bookings`,
+                bookingPayload
             );
-            if (res.status === 200 || res.status === 201) {
-                alert("✅ Booking placed successfully!");
-                setShowBookingPopup(false);
 
-                // reflect booked state in current list without refetch
+            if (bookingRes.status === 200 || bookingRes.status === 201) {
+                const createdBooking =
+                    bookingRes.data?.booking || bookingRes.data;
+
+                // Step 2️⃣ — Update slot to link bookingId
+                await axios.patch(
+                    `${API_BASE_URL}/availability/${selectedSlot._id}`,
+                    {
+                        isAvailable: false,
+                        isBooked: true,
+                        bookingId: createdBooking._id,
+                    }
+                );
+
+                // Step 3️⃣ — Update local state for instant feedback
                 setSlots((prev) =>
                     prev.map((s) =>
                         s._id === selectedSlot._id
-                            ? { ...s, isBooked: true, isAvailable: false }
+                            ? {
+                                  ...s,
+                                  isBooked: true,
+                                  isAvailable: false,
+                              }
                             : s
                     )
                 );
+
+                setShowBookingPopup(false);
+
+                // ✅ Optional success feedback modal / toast
+                alert("✅ Booking placed and slot updated successfully!");
             } else {
                 alert("⚠️ Booking failed. Please try again.");
             }
         } catch (err) {
-            console.error("Error creating booking:", err);
-            alert("❌ Failed to create booking.");
+            console.error("Error during booking process:", err);
+            alert("❌ Failed to complete booking.");
         } finally {
             setBookingLoading(false);
         }

@@ -3,11 +3,14 @@ import { useState } from "react";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
-import { APIURL } from "../environments/env";
+import { API_BASE_URL } from "../environments/env";
 import { jwtDecode } from "jwt-decode";
+import { useDispatch } from "react-redux";
+import { setUser, setUserRole } from "../store/userSlice";
 
 const Login = () => {
     const navigate = useNavigate();
+    const dispatch = useDispatch();
     // State for form data
     const [formData, setFormData] = useState({
         email: "",
@@ -99,13 +102,16 @@ const Login = () => {
             setIsLoading(true);
 
             await axios
-                .post(`${APIURL}/users/login`, {
+                .post(`${API_BASE_URL}/users/login`, {
                     email: formData.email,
                     password: formData.password,
                 })
                 .then((res) => {
-                    const user = jwtDecode(res.data.token);
+                    const user: any = jwtDecode(res.data.token);
                     localStorage.setItem("user", JSON.stringify(user));
+                    localStorage.setItem("userRole", user.user.role);
+                    dispatch(setUser(user));
+                    dispatch(setUserRole(user.user.role));
                     navigate("/discover");
                 })
                 .catch((error) => {
@@ -280,7 +286,7 @@ const Login = () => {
 
             <footer className="bg-white py-4 border-t border-gray-100">
                 <div className="container mx-auto px-4 text-center text-gray-500 text-sm">
-                    <p>©2025 EventPal. All rights reserved</p>
+                    <p>©2025 SkillBridge. All rights reserved</p>
                 </div>
             </footer>
         </div>

@@ -1,9 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Home, Calendar, LogOut, Compass, MessageCircle } from "lucide-react";
+import { Calendar, LogOut, Compass, MessageCircle } from "lucide-react";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 const Sidebar = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const userRole = useSelector((state: RootState) => state.user.userRole);
 
     const logout = () => {
         localStorage.removeItem("user");
@@ -23,28 +26,45 @@ const Sidebar = () => {
                         MAIN MENU
                     </p>
                     <nav className="space-y-1">
-                        <Link
-                            to="/discover"
-                            className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/discover")
-                                    ? "text-white bg-blue-600"
-                                    : "text-gray-500 hover:bg-gray-100"
-                            }`}
-                        >
-                            <Compass className="w-5 h-5 mr-3" />
-                            <span>Discover</span>
-                        </Link>
-                        <Link
-                            to="/sessions"
-                            className={`flex items-center px-3 py-2 rounded-lg ${
-                                isActive("/sessions")
-                                    ? "text-white bg-blue-600"
-                                    : "text-gray-500 hover:bg-gray-100"
-                            }`}
-                        >
-                            <Calendar className="w-5 h-5 mr-3" />
-                            <span>Sessions</span>
-                        </Link>
+                        {userRole === "mentee" ? (
+                            <Link
+                                to="/discover"
+                                className={`flex items-center px-3 py-2 rounded-lg ${
+                                    isActive("/discover")
+                                        ? "text-white bg-blue-600"
+                                        : "text-gray-500 hover:bg-gray-100"
+                                }`}
+                            >
+                                <Compass className="w-5 h-5 mr-3" />
+                                <span>Discover</span>
+                            </Link>
+                        ) : null}
+                        {userRole === "mentee" ? (
+                            <Link
+                                to="/mentee-sessions"
+                                className={`flex items-center px-3 py-2 rounded-lg ${
+                                    isActive("/mentee-sessions")
+                                        ? "text-white bg-blue-600"
+                                        : "text-gray-500 hover:bg-gray-100"
+                                }`}
+                            >
+                                <Calendar className="w-5 h-5 mr-3" />
+                                <span>Sessions</span>
+                            </Link>
+                        ) : (
+                            <Link
+                                to="/mentor-sessions"
+                                className={`flex items-center px-3 py-2 rounded-lg ${
+                                    isActive("/mentor-sessions")
+                                        ? "text-white bg-blue-600"
+                                        : "text-gray-500 hover:bg-gray-100"
+                                }`}
+                            >
+                                <Calendar className="w-5 h-5 mr-3" />
+                                <span>Sessions</span>
+                            </Link>
+                        )}
+
                         <Link
                             to="/messages"
                             className={`flex items-center px-3 py-2 rounded-lg ${
