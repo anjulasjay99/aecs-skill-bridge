@@ -15,6 +15,7 @@ import Messages from "./pages/Messages";
 import Session from "./pages/Session";
 import MentorSessions from "./pages/MentorSessions";
 import Slot from "./pages/Slot";
+import CollaborativeEditor from "./pages/CollaborativeEditor";
 
 type ProtectedRouteParam = {
     children: any;
@@ -123,6 +124,10 @@ function App() {
                     <Route path="messages" element={<Messages />} />
                     <Route path="session" element={<Session />} />
                     <Route path="slot" element={<Slot />} />
+                    <Route
+                        path="live-session"
+                        element={<CollaborativeEditor />}
+                    />
                 </Route>
 
                 {/* Catch all route */}
