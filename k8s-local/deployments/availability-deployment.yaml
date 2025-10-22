@@ -1,0 +1,36 @@
+# availability-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: availability-service
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: availability-service
+    template:
+        metadata:
+            labels:
+                app: availability-service
+        spec:
+            containers:
+                - name: availability-service
+                  image: skillbridge-availability-service
+                  imagePullPolicy: Never
+                  ports:
+                      - containerPort: 3001
+                  envFrom:
+                      - configMapRef:
+                            name: availability-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: availability-service
+spec:
+    type: ClusterIP
+    selector:
+        app: availability-service
+    ports:
+        - port: 3001
+          targetPort: 3001

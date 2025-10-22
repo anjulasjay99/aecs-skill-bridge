@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import io from "socket.io-client";
 import axios from "axios";
 import { Loader } from "lucide-react";
-import { APIURL, MESSAGING_SERVICE } from "../environments/env";
+import { API_BASE_URL } from "../environments/env";
 
 interface Message {
     _id?: string;
@@ -59,7 +59,13 @@ const Messages = () => {
 
     // ---------- Socket setup ----------
     useEffect(() => {
-        const socket = io(MESSAGING_SERVICE, { transports: ["websocket"] });
+        const socket = io(API_BASE_URL, {
+            path: "/socket.io",
+            transports: ["websocket", "polling"],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5,
+        });
         socketRef.current = socket;
 
         const handleReceive = (msg: Message) => {
@@ -132,7 +138,7 @@ const Messages = () => {
     const preloadUser = async (id: string) => {
         if (!id || userCache[id]) return;
         try {
-            const res = await axios.get(`${APIURL}/users/${id}`);
+            const res = await axios.get(`${API_BASE_URL}/users/${id}`);
             setUserCache((prev) => ({ ...prev, [id]: res.data.user }));
         } catch {
             setUserCache((prev) => ({
@@ -150,7 +156,7 @@ const Messages = () => {
     const fetchConversations = async (userId: string) => {
         try {
             const res = await axios.get(
-                `${MESSAGING_SERVICE}/conversations?participants=${userId}`
+                `${API_BASE_URL}/conversations?participants=${userId}`
             );
             const data: Conversation[] = res.data.conversations || [];
             setConversations(data);
@@ -205,7 +211,7 @@ const Messages = () => {
             // try to locate conversation via REST
             try {
                 const res = await axios.get(
-                    `${MESSAGING_SERVICE}/conversations?participants=${loggedUserId}`
+                    `${API_BASE_URL}/conversations?participants=${loggedUserId}`
                 );
                 const data: Conversation[] = res.data.conversations || [];
                 setConversations(data);

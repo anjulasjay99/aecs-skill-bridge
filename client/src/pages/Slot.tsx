@@ -10,12 +10,8 @@ import {
     UserCircle2,
     Upload,
     Trash2,
+    Download,
     X,
-    Briefcase,
-    Layers,
-    BadgeCheck,
-    Star,
-    DollarSign,
     MessageSquare,
 } from "lucide-react";
 
@@ -25,23 +21,15 @@ interface Slot {
     startTime: string;
     endTime: string;
     mentorId: string;
+    menteeId: string;
+    bookingId: string;
 }
 
-interface Mentor {
-    _id?: string;
-    userId?: {
-        _id?: string;
-        firstName?: string;
-        lastName?: string;
-        email?: string;
-    };
-    designation?: string;
-    bio?: string;
-    domains?: string[];
-    yearsOfExperience?: number;
-    hourlyRate?: number;
-    badges?: string[];
-    createdAt?: string;
+interface Mentee {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
 }
 
 interface FileItem {
@@ -54,16 +42,15 @@ interface FileItem {
     createdAt: string;
 }
 
-const Session = () => {
+const Slot = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const slotId = searchParams.get("slotId");
 
     const [slot, setSlot] = useState<Slot | null>(null);
-    const [mentor, setMentor] = useState<Mentor | null>(null);
+    const [mentee, setMentee] = useState<Mentee | null>(null);
     const [files, setFiles] = useState<FileItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"about" | "files">("about");
 
     const [uploadPopup, setUploadPopup] = useState(false);
     const [fileName, setFileName] = useState("");
@@ -71,27 +58,39 @@ const Session = () => {
     const [uploading, setUploading] = useState(false);
 
     const userData = localStorage.getItem("user");
-    const loggedUserId = userData ? JSON.parse(userData)?.user?._id : null;
+    const loggedMentorId = userData ? JSON.parse(userData)?.user?._id : null;
 
-    // Fetch slot, mentor, and files
     useEffect(() => {
         const fetchData = async () => {
             if (!slotId) return;
             setLoading(true);
             try {
+                // 1️⃣ Fetch slot
                 const slotRes = await axios.get(
                     `${API_BASE_URL}/availability/slots/${slotId}`
                 );
                 const slotData = slotRes.data?.slot;
                 setSlot(slotData);
 
-                if (slotData?.mentorId) {
-                    const mentorRes = await axios.get(
-                        `${API_BASE_URL}/mentors/${slotData.mentorId}`
+                // 2️⃣ Fetch mentee details if booking exists
+                if (slotData?.bookingId) {
+                    const bookingRes = await axios.get(
+                        `${API_BASE_URL}/bookings/${slotData.bookingId}`
                     );
-                    setMentor(mentorRes.data?.mentor);
+                    const booking = bookingRes.data?.booking;
+                    if (booking?.menteeId) {
+                        const menteeRes = await axios.get(
+                            `${API_BASE_URL}/users/${booking.menteeId}`
+                        );
+                        const userData =
+                            menteeRes.data?.user ||
+                            menteeRes.data?.mentee ||
+                            menteeRes.data;
+                        setMentee(userData);
+                    }
                 }
 
+                // 3️⃣ Fetch files for the slot
                 const filesRes = await axios.get(
                     `${API_BASE_URL}/files/${slotId}`
                 );
@@ -101,11 +100,12 @@ const Session = () => {
                         : [filesRes.data?.files]
                 );
             } catch (err) {
-                console.error("Error fetching session data:", err);
+                console.error("Error fetching slot data:", err);
             } finally {
                 setLoading(false);
             }
         };
+
         fetchData();
     }, [slotId]);
 
@@ -133,8 +133,8 @@ const Session = () => {
             !fileName ||
             !fileBase64 ||
             !slot ||
-            !loggedUserId ||
-            !mentor?.userId?._id
+            !mentee?._id ||
+            !loggedMentorId
         ) {
             alert("Please provide file name and select a file.");
             return;
@@ -142,8 +142,8 @@ const Session = () => {
         setUploading(true);
         try {
             const payload = {
-                mentorId: mentor.userId._id,
-                menteeId: loggedUserId,
+                mentorId: loggedMentorId,
+                menteeId: mentee._id,
                 slotId: slot._id,
                 fileName,
                 base64: fileBase64,
@@ -182,6 +182,20 @@ const Session = () => {
         }
     };
 
+    const handleDownload = (file: FileItem) => {
+        const link = document.createElement("a");
+        link.href = file.url;
+        link.download = file.fileName;
+        link.target = "_blank";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const openMessages = () => {
+        if (mentee?._id) navigate(`/messages?userId=${mentee._id}`);
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center h-64">
@@ -190,23 +204,13 @@ const Session = () => {
         );
     }
 
-    if (!slot || !mentor) {
+    if (!slot || !mentee) {
         return (
             <div className="flex justify-center items-center h-64 text-gray-500">
-                Session not found.
+                Slot not found.
             </div>
         );
     }
-
-    const joinedDate = mentor?.createdAt
-        ? new Date(mentor.createdAt).toLocaleDateString("en-US", {
-              month: "short",
-              year: "numeric",
-          })
-        : "N/A";
-    const openMessages = () => {
-        navigate(`/messages?userId=${slot.mentorId}`);
-    };
 
     return (
         <div className="flex-1 overflow-auto bg-gray-50 p-8">
@@ -218,20 +222,15 @@ const Session = () => {
                     </div>
                     <div className="flex flex-col gap-2">
                         <h1 className="text-3xl font-semibold text-gray-800">
-                            Session with {mentor.userId?.firstName || "Mentor"}
+                            Session with {mentee.firstName} {mentee.lastName}
                         </h1>
-                        <p className="text-gray-500 text-lg">
-                            {mentor.designation}
-                        </p>
+                        <p className="text-gray-500 text-sm">{mentee.email}</p>
                         <div className="flex items-center gap-3 text-sm mt-1 text-gray-600">
                             <Calendar className="w-4 h-4" />
                             {new Date(slot.date).toLocaleDateString("en-US")}
                             <Clock className="w-4 h-4 ml-3" />
                             {slot.startTime} - {slot.endTime}
                         </div>
-                        <p className="text-gray-500 text-sm">
-                            Slot ID: {slot._id}
-                        </p>
                         <div className="mt-3">
                             <button
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
@@ -244,135 +243,60 @@ const Session = () => {
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="border-b border-gray-200 flex gap-6 mt-6">
-                    {["about", "files"].map((tab) => (
+                {/* Files Section */}
+                <div className="mt-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800">
+                            Shared Files
+                        </h3>
                         <button
-                            key={tab}
-                            className={`pb-2 text-sm font-medium ${
-                                activeTab === tab
-                                    ? "border-b-2 border-blue-600 text-blue-600"
-                                    : "text-gray-600 hover:text-blue-600"
-                            }`}
-                            onClick={() => setActiveTab(tab as any)}
+                            onClick={() => setUploadPopup(true)}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
                         >
-                            {tab === "about" ? "About" : "Files"}
+                            <Upload className="w-4 h-4" /> Upload File
                         </button>
-                    ))}
-                </div>
+                    </div>
 
-                {/* Content */}
-                <div className="mt-4">
-                    {/* About */}
-                    {activeTab === "about" && (
-                        <div className="grid grid-cols-1 gap-3">
-                            <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                                About
-                            </h3>
-                            <div className="text-gray-700">
-                                <p className="mb-2 flex items-center gap-2">
-                                    <Briefcase className="w-4 h-4 text-gray-500" />
-                                    <span>
-                                        Designation: {mentor.designation ?? "—"}
-                                    </span>
-                                </p>
-                                <p className="mb-2 flex items-center gap-2">
-                                    <Layers className="w-4 h-4 text-gray-500" />
-                                    <span>
-                                        Domains:{" "}
-                                        {mentor.domains?.length
-                                            ? mentor.domains.join(", ")
-                                            : "—"}
-                                    </span>
-                                </p>
-                                <p className="mb-2 flex items-center gap-2">
-                                    <BadgeCheck className="w-4 h-4 text-gray-500" />
-                                    <span>
-                                        Badges:{" "}
-                                        {mentor.badges?.length
-                                            ? mentor.badges.join(", ")
-                                            : "—"}
-                                    </span>
-                                </p>
-                                <p className="mb-2 flex items-center gap-2">
-                                    <Star className="w-4 h-4 text-gray-500" />
-                                    <span>
-                                        Experience:{" "}
-                                        {mentor.yearsOfExperience ?? "—"} years
-                                    </span>
-                                </p>
-                                <p className="mb-2 flex items-center gap-2">
-                                    <DollarSign className="w-4 h-4 text-gray-500" />
-                                    <span>
-                                        Hourly Rate:{" "}
-                                        {mentor.hourlyRate
-                                            ? `$${mentor.hourlyRate}/hr`
-                                            : "—"}
-                                    </span>
-                                </p>
-                                <p className="mb-2 text-gray-500 text-sm">
-                                    Joined: {joinedDate}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Files */}
-                    {activeTab === "files" && (
-                        <div className="grid grid-cols-1 gap-4">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-semibold text-gray-800">
-                                    Files
-                                </h3>
-                                <button
-                                    onClick={() => setUploadPopup(true)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                    {files.length > 0 ? (
+                        <div className="grid gap-3">
+                            {files.map((file) => (
+                                <div
+                                    key={file._id}
+                                    className="flex justify-between items-center border border-gray-200 rounded-lg p-3 bg-gray-50"
                                 >
-                                    <Upload className="w-4 h-4" /> Upload File
-                                </button>
-                            </div>
-
-                            {files.length > 0 ? (
-                                <div className="grid gap-3">
-                                    {files.map((file) => (
-                                        <div
-                                            key={file._id}
-                                            className="flex justify-between items-center border border-gray-200 rounded-lg p-3 bg-gray-50"
+                                    <div className="flex flex-col">
+                                        <p className="font-medium text-gray-700">
+                                            {file.fileName}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                            {new Date(
+                                                file.createdAt
+                                            ).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => handleDownload(file)}
+                                            className="text-blue-600 hover:text-blue-800"
                                         >
-                                            <div className="flex flex-col">
-                                                <a
-                                                    href={file.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-600 hover:underline"
-                                                >
-                                                    {file.fileName}
-                                                </a>
-                                                <p className="text-xs text-gray-500">
-                                                    {new Date(
-                                                        file.createdAt
-                                                    ).toLocaleString()}
-                                                </p>
-                                            </div>
-                                            {file.menteeId === loggedUserId && (
-                                                <button
-                                                    onClick={() =>
-                                                        handleDelete(file._id)
-                                                    }
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
+                                            <Download className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() =>
+                                                handleDelete(file._id)
+                                            }
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
-                            ) : (
-                                <p className="text-gray-500 text-sm">
-                                    No files uploaded yet.
-                                </p>
-                            )}
+                            ))}
                         </div>
+                    ) : (
+                        <p className="text-gray-500 text-sm">
+                            No files uploaded yet.
+                        </p>
                     )}
                 </div>
             </div>
@@ -446,4 +370,4 @@ const Session = () => {
     );
 };
 
-export default Session;
+export default Slot;
