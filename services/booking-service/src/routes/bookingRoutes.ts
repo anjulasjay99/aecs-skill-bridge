@@ -6,11 +6,12 @@ import {
     updateBooking,
     deleteBooking,
 } from "../services/bookingService.js";
+import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
 // Create a new booking
-router.post("/", async (req, res) => {
+router.post("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId, payment, isConfirmed } = req.body;
     const createdDate = new Date().toISOString();
 
@@ -34,7 +35,7 @@ router.post("/", async (req, res) => {
 });
 
 // GET /bookings?mentorId=...&menteeId=...
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId } = req.query;
 
     try {
@@ -51,7 +52,7 @@ router.get("/", async (req, res) => {
 });
 
 // GET /bookings/:bookingId
-router.get("/:bookingId", async (req, res) => {
+router.get("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
 
     try {
@@ -67,7 +68,7 @@ router.get("/:bookingId", async (req, res) => {
 });
 
 // PATCH /bookings/:bookingId
-router.patch("/:bookingId", async (req, res) => {
+router.patch("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
     const updateData = req.body;
 
@@ -87,7 +88,7 @@ router.patch("/:bookingId", async (req, res) => {
 });
 
 // DELETE /bookings/:bookingId
-router.delete("/:bookingId", async (req, res) => {
+router.delete("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
 
     try {

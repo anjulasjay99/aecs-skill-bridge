@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { searchMentors, getMentorById } from "../services/searchService.js";
+import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
 // Filter + Pagination
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, async (req, res) => {
     try {
         const result = await searchMentors(req.query);
 
@@ -22,7 +23,7 @@ router.get("/", async (req, res) => {
 });
 
 //  /mentors/:mentorId — Mentor details
-router.get("/:mentorId", async (req, res) => {
+router.get("/:mentorId", authenticateToken, async (req, res) => {
     const { mentorId } = req.params;
 
     try {
