@@ -11,6 +11,8 @@ import {
     Layers,
     DollarSign,
 } from "lucide-react";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 interface Mentor {
     _id: string;
@@ -35,6 +37,7 @@ interface MentorResponse {
 }
 
 const Discover = () => {
+    const token = useSelector((state: RootState) => state.user.token);
     const navigate = useNavigate();
 
     const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -90,7 +93,13 @@ const Discover = () => {
 
             const res = await axios.get<MentorResponse>(
                 `${API_BASE_URL}/mentors`,
-                { params }
+                {
+                    params,
+
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
             );
             const list = Array.isArray(res.data?.mentors)
                 ? res.data.mentors

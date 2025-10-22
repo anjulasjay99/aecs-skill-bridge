@@ -10,16 +10,17 @@ import {
     uploadBase64File,
 } from "../services/fileUploadService.js";
 import { getFileKey } from "../utils/getFileKey.js";
+import { authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
 // Health check
-router.get("/", (_req, res) => {
+router.get("/", authenticateToken, (_req, res) => {
     res.json({ message: "File endpoint working" });
 });
 
 // All files for a slot
-router.get("/:slotId", async (req, res) => {
+router.get("/:slotId", authenticateToken, async (req, res) => {
     const { slotId } = req.params;
 
     try {
@@ -32,7 +33,7 @@ router.get("/:slotId", async (req, res) => {
 });
 
 // Create a new file
-router.post("/", async (req, res) => {
+router.post("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId, fileName, base64 } = req.body;
     const createdAt = new Date().toISOString();
 
@@ -61,7 +62,7 @@ router.post("/", async (req, res) => {
 });
 
 // Remove a slot
-router.delete("/:fileId", async (req, res) => {
+router.delete("/:fileId", authenticateToken, async (req, res) => {
     const { fileId } = req.params;
 
     try {

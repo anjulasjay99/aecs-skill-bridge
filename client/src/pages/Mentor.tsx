@@ -19,6 +19,8 @@ import {
     X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 interface Slot {
     _id: string;
@@ -56,6 +58,7 @@ const parseDurationHours = (start: string, end: string) => {
 };
 
 const Mentor = () => {
+    const token = useSelector((state: RootState) => state.user.token);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const mentorIdFromQuery = searchParams.get("id");
@@ -81,7 +84,12 @@ const Mentor = () => {
             try {
                 // ✅ correct endpoint (singular)
                 const res = await axios.get(
-                    `${API_BASE_URL}/mentors/${mentorIdFromQuery}`
+                    `${API_BASE_URL}/mentors/${mentorIdFromQuery}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 setMentor(res.data?.mentor || null);
             } catch (err) {
@@ -100,7 +108,12 @@ const Mentor = () => {
             setLoadingSlots(true);
             try {
                 const availRes = await axios.get(
-                    `${API_BASE_URL}/availability/${mentorId}`
+                    `${API_BASE_URL}/availability/${mentorId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 const fetchedSlots: Slot[] = Array.isArray(availRes.data?.slots)
                     ? availRes.data.slots
@@ -114,6 +127,10 @@ const Mentor = () => {
                                 `${API_BASE_URL}/bookings`,
                                 {
                                     params: { slotId: slot._id },
+
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                    },
                                 }
                             );
                             const data = bookingRes.data;
@@ -202,7 +219,12 @@ const Mentor = () => {
 
             const bookingRes = await axios.post(
                 `${API_BASE_URL}/bookings`,
-                bookingPayload
+                bookingPayload,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
             );
 
             if (bookingRes.status === 200 || bookingRes.status === 201) {
@@ -216,6 +238,11 @@ const Mentor = () => {
                         isAvailable: false,
                         isBooked: true,
                         bookingId: createdBooking._id,
+                    },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
                     }
                 );
 
