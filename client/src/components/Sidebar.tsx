@@ -1,15 +1,18 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Calendar, LogOut, Compass, MessageCircle } from "lucide-react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "../store/store";
+import { logout as logoutState } from "../store/userSlice";
 
 const Sidebar = () => {
     const navigate = useNavigate();
+    const dispatch = useDispatch();
     const location = useLocation();
     const userRole = useSelector((state: RootState) => state.user.userRole);
 
     const logout = () => {
         localStorage.removeItem("user");
+        dispatch(logoutState());
         navigate("/login");
     };
 

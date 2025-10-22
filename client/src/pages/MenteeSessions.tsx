@@ -3,6 +3,8 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import { Loader, X, AlertTriangle } from "lucide-react";
 import { API_BASE_URL } from "../environments/env";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 interface Booking {
     _id: string;
@@ -36,6 +38,7 @@ interface Slot {
 }
 
 const MenteeSessions = () => {
+    const token = useSelector((state: RootState) => state.user.token);
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [mentors, setMentors] = useState<Record<string, Mentor>>({});
     const [slots, setSlots] = useState<Record<string, Slot>>({});
@@ -55,7 +58,12 @@ const MenteeSessions = () => {
             const menteeId = userData ? JSON.parse(userData)?.user?._id : null;
 
             const res = await axios.get(
-                `${API_BASE_URL}/bookings?menteeId=${menteeId}`
+                `${API_BASE_URL}/bookings?menteeId=${menteeId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
             );
             const data = res.data.bookings || [];
             setBookings(data);
@@ -63,14 +71,24 @@ const MenteeSessions = () => {
             // Fetch mentors and slots concurrently
             const mentorPromises = data.map(async (booking: Booking) => {
                 const mentorRes = await axios.get(
-                    `${API_BASE_URL}/mentors/${booking.mentorId}`
+                    `${API_BASE_URL}/mentors/${booking.mentorId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 return { id: booking.mentorId, mentor: mentorRes.data.mentor };
             });
 
             const slotPromises = data.map(async (booking: Booking) => {
                 const slotRes = await axios.get(
-                    `${API_BASE_URL}/availability/slots/${booking.slotId}`
+                    `${API_BASE_URL}/availability/slots/${booking.slotId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 return { id: booking.slotId, slot: slotRes.data.slot };
             });
@@ -106,7 +124,12 @@ const MenteeSessions = () => {
         setCancelLoading(true);
         try {
             await axios.delete(
-                `${API_BASE_URL}/bookings/${selectedBooking._id}`
+                `${API_BASE_URL}/bookings/${selectedBooking._id}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
             );
             closeCancelModal();
             await fetchBookings();

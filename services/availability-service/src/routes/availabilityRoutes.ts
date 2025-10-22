@@ -86,12 +86,7 @@ router.patch(
     "/:slotId",
     authenticateToken,
     async (req: AuthRequest, res: Response) => {
-        if (req.user?.role === Role.MENTEE) {
-            res.status(401).json({
-                message: "User cannot perform this action",
-            });
-            return;
-        }
+       
         const { slotId } = req.params;
         const updateData = req.body;
         updateData.updatedAt = new Date().toISOString();
