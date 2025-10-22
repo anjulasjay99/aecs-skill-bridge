@@ -193,33 +193,38 @@ const Mentor = () => {
         try {
             setBookingLoading(true);
 
-            // Get mentee id from localStorage
+            // Get mentee data from localStorage
             const userData = localStorage.getItem("user");
-            const menteeId = userData ? JSON.parse(userData)?.user?._id : null;
-            if (!menteeId) {
-                alert("User not logged in or mentee ID missing.");
+            const menteeData = userData ? JSON.parse(userData)?.user : null;
+            if (!menteeData?._id || !menteeData?.email) {
+                alert("User not logged in or mentee details missing.");
                 return;
             }
 
-            // Compute total payment
+            // Compute total payment (hourlyRate × duration)
             const duration = parseDurationHours(
                 selectedSlot.startTime,
                 selectedSlot.endTime
             );
-            const payment = (mentor.hourlyRate || 0) * duration;
+            const totalPayment = (mentor.hourlyRate || 0) * duration;
 
-            // Step 1️⃣ — Create booking
-            const bookingPayload = {
-                mentorId: mentor.userId?._id, // mentor's userId
-                menteeId,
+            // Prepare payload for Payment Service
+            const sessionPayload = {
+                mentorName: `${mentor.userId?.firstName} ${mentor.userId?.lastName}`,
+                menteeEmail: menteeData.email, // ✅ use mentee's email
+                sessionTitle: `${mentor.designation ?? "Mentorship"} (${
+                    selectedSlot.startTime
+                } - ${selectedSlot.endTime})`,
+                price: totalPayment,
+                mentorId: mentor.userId?._id,
+                menteeId: menteeData._id,
                 slotId: selectedSlot._id,
-                payment,
-                isConfirmed: false,
             };
 
-            const bookingRes = await axios.post(
-                `${API_BASE_URL}/bookings`,
-                bookingPayload,
+            // Step 1️⃣ — Create Stripe Checkout session
+            const res = await axios.post(
+                `${API_BASE_URL}/payments/create-session`,
+                sessionPayload,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -227,48 +232,17 @@ const Mentor = () => {
                 }
             );
 
-            if (bookingRes.status === 200 || bookingRes.status === 201) {
-                const createdBooking =
-                    bookingRes.data?.booking || bookingRes.data;
-
-                // Step 2️⃣ — Update slot to link bookingId
-                await axios.patch(
-                    `${API_BASE_URL}/availability/${selectedSlot._id}`,
-                    {
-                        isAvailable: false,
-                        isBooked: true,
-                        bookingId: createdBooking._id,
-                    },
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    }
-                );
-
-                // Step 3️⃣ — Update local state for instant feedback
-                setSlots((prev) =>
-                    prev.map((s) =>
-                        s._id === selectedSlot._id
-                            ? {
-                                  ...s,
-                                  isBooked: true,
-                                  isAvailable: false,
-                              }
-                            : s
-                    )
-                );
-
-                setShowBookingPopup(false);
-
-                // ✅ Optional success feedback modal / toast
-                alert("✅ Booking placed and slot updated successfully!");
+            // Step 2️⃣ — Redirect user to Stripe Checkout
+            if (res.data?.url) {
+                window.location.href = res.data.url;
             } else {
-                alert("⚠️ Booking failed. Please try again.");
+                alert(
+                    "⚠️ Failed to initiate payment session. Please try again."
+                );
             }
         } catch (err) {
-            console.error("Error during booking process:", err);
-            alert("❌ Failed to complete booking.");
+            console.error("Error initiating payment:", err);
+            alert("❌ Failed to start payment session.");
         } finally {
             setBookingLoading(false);
         }

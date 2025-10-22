@@ -16,6 +16,8 @@ import Session from "./pages/Session";
 import MentorSessions from "./pages/MentorSessions";
 import Slot from "./pages/Slot";
 import CollaborativeEditor from "./pages/CollaborativeEditor";
+import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentFailed from "./pages/PaymentFailed";
 
 type ProtectedRouteParam = {
     children: any;
@@ -128,6 +130,11 @@ function App() {
                         path="live-session"
                         element={<CollaborativeEditor />}
                     />
+                    <Route
+                        path="payment-success"
+                        element={<PaymentSuccess />}
+                    />
+                    <Route path="payment-failed" element={<PaymentFailed />} />
                 </Route>
 
                 {/* Catch all route */}
