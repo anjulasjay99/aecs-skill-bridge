@@ -17,6 +17,7 @@ import {
     Star,
     DollarSign,
     MessageSquare,
+    Code,
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import { RootState } from "../store/store";
@@ -238,6 +239,9 @@ const Session = () => {
     const openMessages = () => {
         navigate(`/messages?userId=${slot.mentorId}`);
     };
+    const openLiveSession = () => {
+        navigate(`/live-session?id=${slot._id}`);
+    };
 
     return (
         <div className="flex-1 overflow-auto bg-gray-50 p-8">
@@ -263,13 +267,20 @@ const Session = () => {
                         <p className="text-gray-500 text-sm">
                             Slot ID: {slot._id}
                         </p>
-                        <div className="mt-3">
+                        <div className="mt-3 flex flex-row gap-8">
                             <button
                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
                                 onClick={() => openMessages()}
                             >
                                 <MessageSquare className="w-4 h-4" />
                                 Message
+                            </button>
+                            <button
+                                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
+                                onClick={() => openLiveSession()}
+                            >
+                                <Code className="w-4 h-4" />
+                                Start Session
                             </button>
                         </div>
                     </div>
