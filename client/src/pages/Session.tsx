@@ -18,6 +18,8 @@ import {
     DollarSign,
     MessageSquare,
 } from "lucide-react";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 interface Slot {
     _id: string;
@@ -55,6 +57,7 @@ interface FileItem {
 }
 
 const Session = () => {
+    const token = useSelector((state: RootState) => state.user.token);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const slotId = searchParams.get("slotId");
@@ -80,20 +83,35 @@ const Session = () => {
             setLoading(true);
             try {
                 const slotRes = await axios.get(
-                    `${API_BASE_URL}/availability/slots/${slotId}`
+                    `${API_BASE_URL}/availability/slots/${slotId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 const slotData = slotRes.data?.slot;
                 setSlot(slotData);
 
                 if (slotData?.mentorId) {
                     const mentorRes = await axios.get(
-                        `${API_BASE_URL}/mentors/${slotData.mentorId}`
+                        `${API_BASE_URL}/mentors/${slotData.mentorId}`,
+                        {
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                            },
+                        }
                     );
                     setMentor(mentorRes.data?.mentor);
                 }
 
                 const filesRes = await axios.get(
-                    `${API_BASE_URL}/files/${slotId}`
+                    `${API_BASE_URL}/files/${slotId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 setFiles(
                     Array.isArray(filesRes.data?.files)
@@ -148,14 +166,23 @@ const Session = () => {
                 fileName,
                 base64: fileBase64,
             };
-            const res = await axios.post(`${API_BASE_URL}/files`, payload);
+            const res = await axios.post(`${API_BASE_URL}/files`, payload, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
             if (res.status === 200 || res.status === 201) {
                 alert("✅ File uploaded successfully!");
                 setUploadPopup(false);
                 setFileName("");
                 setFileBase64(null);
                 const filesRes = await axios.get(
-                    `${API_BASE_URL}/files/${slot._id}`
+                    `${API_BASE_URL}/files/${slot._id}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
                 setFiles(
                     Array.isArray(filesRes.data?.files)
@@ -175,7 +202,11 @@ const Session = () => {
         if (!window.confirm("Are you sure you want to delete this file?"))
             return;
         try {
-            await axios.delete(`${API_BASE_URL}/files/${fileId}`);
+            await axios.delete(`${API_BASE_URL}/files/${fileId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
             setFiles((prev) => prev.filter((f) => f._id !== fileId));
         } catch (err) {
             console.error("Delete failed:", err);

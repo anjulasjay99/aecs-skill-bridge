@@ -6,7 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../environments/env";
 import { jwtDecode } from "jwt-decode";
 import { useDispatch } from "react-redux";
-import { setUser, setUserRole } from "../store/userSlice";
+import { setUser, setUserRole, setToken } from "../store/userSlice";
 
 const Login = () => {
     const navigate = useNavigate();
@@ -110,8 +110,10 @@ const Login = () => {
                     const user: any = jwtDecode(res.data.token);
                     localStorage.setItem("user", JSON.stringify(user));
                     localStorage.setItem("userRole", user.user.role);
+                    localStorage.setItem("token", res.data.token);
                     dispatch(setUser(user));
                     dispatch(setUserRole(user.user.role));
+                    dispatch(setToken(res.data.token));
                     navigate("/discover");
                 })
                 .catch((error) => {

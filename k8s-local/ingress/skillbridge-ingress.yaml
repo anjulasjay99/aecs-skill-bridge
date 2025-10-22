@@ -3,18 +3,17 @@ kind: Ingress
 metadata:
     name: skillbridge-ingress
     annotations:
-        nginx.ingress.kubernetes.io/websocket-services: messaging-service
+        nginx.ingress.kubernetes.io/websocket-services: "messaging-service"
         nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
         nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-        nginx.ingress.kubernetes.io/connection-proxy-header: "keep-alive"
-        nginx.ingress.kubernetes.io/upgrade-insecure-requests: "true"
+        nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
 spec:
     ingressClassName: nginx
     rules:
         - http:
               paths:
-                  - path: /socket.io
-                    pathType: Prefix
+                  - path: /socket.io/
+                    pathType: ImplementationSpecific
                     backend:
                         service:
                             name: messaging-service

@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { API_BASE_URL } from "../environments/env";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
+import { RootState } from "../store/store";
 
 interface Slot {
     _id: string;
@@ -42,6 +44,7 @@ interface Mentee {
 }
 
 const MentorSessions = () => {
+    const token = useSelector((state: RootState) => state.user.token);
     const [slots, setSlots] = useState<Slot[]>([]);
     const [bookings, setBookings] = useState<Record<string, Booking | null>>(
         {}
@@ -78,7 +81,12 @@ const MentorSessions = () => {
         try {
             // 1️⃣ Fetch mentor slots
             const slotRes = await axios.get(
-                `${API_BASE_URL}/availability/${mentorId}`
+                `${API_BASE_URL}/availability/${mentorId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
             );
             const slotsData: Slot[] = slotRes.data?.slots || [];
             setSlots(slotsData);
@@ -95,7 +103,12 @@ const MentorSessions = () => {
 
                 try {
                     const bookingRes = await axios.get(
-                        `${API_BASE_URL}/bookings/${slot.bookingId}`
+                        `${API_BASE_URL}/bookings/${slot.bookingId}`,
+                        {
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                            },
+                        }
                     );
                     const booking: Booking = bookingRes.data?.booking;
                     bookingMap[slot._id] = booking;
@@ -103,7 +116,12 @@ const MentorSessions = () => {
                     // 3️⃣ Fetch mentee details
                     if (booking?.menteeId) {
                         const userRes = await axios.get(
-                            `${API_BASE_URL}/users/${booking.menteeId}`
+                            `${API_BASE_URL}/users/${booking.menteeId}`,
+                            {
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                },
+                            }
                         );
                         const userData =
                             userRes.data?.user ||
@@ -168,13 +186,26 @@ const MentorSessions = () => {
             if (editSlot) {
                 await axios.patch(
                     `${API_BASE_URL}/availability/${editSlot._id}`,
-                    formData
+                    formData,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
                 );
             } else {
-                await axios.post(`${API_BASE_URL}/availability`, {
-                    mentorId,
-                    ...formData,
-                });
+                await axios.post(
+                    `${API_BASE_URL}/availability`,
+                    {
+                        mentorId,
+                        ...formData,
+                    },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
+                );
             }
             setShowSlotModal(false);
             fetchSlots();
@@ -196,7 +227,11 @@ const MentorSessions = () => {
             return;
 
         try {
-            await axios.delete(`${API_BASE_URL}/availability/${slot._id}`);
+            await axios.delete(`${API_BASE_URL}/availability/${slot._id}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
             fetchSlots();
         } catch (err) {
             console.error(err);
@@ -213,9 +248,17 @@ const MentorSessions = () => {
     const confirmBooking = async () => {
         if (!confirmBookingId) return;
         try {
-            await axios.patch(`${API_BASE_URL}/bookings/${confirmBookingId}`, {
-                isConfirmed: true,
-            });
+            await axios.patch(
+                `${API_BASE_URL}/bookings/${confirmBookingId}`,
+                {
+                    isConfirmed: true,
+                },
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
             setShowConfirmModal(false);
             setConfirmBookingId(null);
             fetchSlots();
