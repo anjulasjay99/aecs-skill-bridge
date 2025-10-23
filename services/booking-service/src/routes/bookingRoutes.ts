@@ -94,7 +94,7 @@ router.delete("/:bookingId", authenticateToken, async (req, res) => {
     const token = req.headers.authorization;
 
     try {
-        // 🧩 Step 1: Get the booking before deleting (to find its slotId)
+        // Get the booking before deleting (to find its slotId)
         const booking = await getBookingById(bookingId);
         if (!booking) {
             return res.status(404).json({ message: "Booking not found" });
@@ -102,13 +102,13 @@ router.delete("/:bookingId", authenticateToken, async (req, res) => {
 
         const slotId = booking.slotId;
 
-        // 🧩 Step 2: Delete booking record
+        // Delete booking record
         const deleted = await deleteBooking(bookingId);
         if (!deleted) {
             return res.status(404).json({ message: "Booking not found" });
         }
 
-        // 🧩 Step 3: Update slot availability in availability-service
+        // Update slot availability in availability-service
         if (slotId) {
             try {
                 await axios.patch(
@@ -126,11 +126,10 @@ router.delete("/:bookingId", authenticateToken, async (req, res) => {
                 );
             } catch (err: any) {
                 console.error("⚠️ Failed to update availability:", err.message);
-                // Don’t fail deletion if slot update fails — just log it
             }
         }
 
-        // 🧩 Step 4: Respond to client
+        // Respond to client
         res.status(200).json({
             message: "Booking deleted and slot released successfully",
         });

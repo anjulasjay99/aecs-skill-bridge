@@ -69,7 +69,7 @@ const Slot = () => {
             if (!slotId) return;
             setLoading(true);
             try {
-                // 1️⃣ Fetch slot
+                // Fetch slot
                 const slotRes = await axios.get(
                     `${API_BASE_URL}/availability/slots/${slotId}`,
                     {
@@ -81,7 +81,7 @@ const Slot = () => {
                 const slotData = slotRes.data?.slot;
                 setSlot(slotData);
 
-                // 2️⃣ Fetch mentee details if booking exists
+                // Fetch mentee details if booking exists
                 if (slotData?.bookingId) {
                     const bookingRes = await axios.get(
                         `${API_BASE_URL}/bookings/${slotData.bookingId}`,
@@ -109,7 +109,7 @@ const Slot = () => {
                     }
                 }
 
-                // 3️⃣ Fetch files for the slot
+                // Fetch files for the slot
                 const filesRes = await axios.get(
                     `${API_BASE_URL}/files/${slotId}`,
                     {

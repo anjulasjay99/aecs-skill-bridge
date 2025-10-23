@@ -53,7 +53,7 @@ const ProtectedRoute = (params: ProtectedRouteParam) => {
 // Role-based route guard
 const RoleGuard = ({ children }: { children: any }) => {
     const userRole = useSelector((state: RootState) => state.user.userRole);
-    console.log(userRole);
+
     const location = useLocation();
 
     // If user is a mentee and trying to access non-discover routes, redirect to discover

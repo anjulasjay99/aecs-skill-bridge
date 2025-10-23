@@ -28,12 +28,12 @@ router.get("/", async (req, res) => {
         let query = {};
 
         if (participantList.length === 1) {
-            // ✅ If only one user — return all their conversations
+            // return all their conversations
             query = {
                 participants: participantList[0],
             };
         } else {
-            // ✅ If multiple users — return only conversations that include *all* and only them
+            // return only conversations that include *all* and only them
             query = {
                 participants: { $all: participantList },
                 $expr: {
