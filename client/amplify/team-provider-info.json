@@ -1,0 +1,23 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-skillbridge-dev-f07a5-authRole",
+      "UnauthRoleArn": "arn:aws:iam::756182604300:role/amplify-skillbridge-dev-f07a5-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::756182604300:role/amplify-skillbridge-dev-f07a5-authRole",
+      "Region": "ap-southeast-1",
+      "DeploymentBucketName": "amplify-skillbridge-dev-f07a5-deployment",
+      "UnauthRoleName": "amplify-skillbridge-dev-f07a5-unauthRole",
+      "StackName": "amplify-skillbridge-dev-f07a5",
+      "StackId": "arn:aws:cloudformation:ap-southeast-1:756182604300:stack/amplify-skillbridge-dev-f07a5/e20250a0-affb-11f0-b330-06a91fb474fd",
+      "AmplifyAppId": "d1zvubrajkfhi1"
+    },
+    "categories": {
+      "hosting": {
+        "amplifyhosting": {
+          "appId": "d1zvubrajkfhi1",
+          "type": "manual"
+        }
+      }
+    }
+  }
+}
