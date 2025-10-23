@@ -132,7 +132,7 @@ const Discover = () => {
         setPage(1);
     }, [domainFilter, designationFilter, badgeFilter, expFilter, rateFilter]);
 
-    // 🧭 Navigate to mentor detail page
+    // Navigate to mentor detail page
     const handleCardClick = (mentor: Mentor) => {
         if (mentor.userId?._id) {
             navigate(`/mentor?id=${mentor.userId._id}`);

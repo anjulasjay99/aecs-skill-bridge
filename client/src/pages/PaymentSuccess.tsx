@@ -10,11 +10,11 @@ import { RootState } from "../store/store";
 const PaymentSuccess = () => {
     const navigate = useNavigate();
     const token = useSelector((state: RootState) => state.user.token);
-    const hasRun = useRef(false); // ✅ Prevent double execution
+    const hasRun = useRef(false); // Prevent double execution
 
     useEffect(() => {
         const verifyPayment = async () => {
-            if (hasRun.current) return; // ⛔ Run once only
+            if (hasRun.current) return; // Run once only
             hasRun.current = true;
 
             const params = new URLSearchParams(window.location.search);
@@ -30,7 +30,7 @@ const PaymentSuccess = () => {
                     `${API_BASE_URL}/payments/verify-session/${sessionId}`,
                     {
                         headers: {
-                            Authorization: `Bearer ${token}`, // ✅ Include auth token
+                            Authorization: `Bearer ${token}`, // Include auth token
                         },
                     }
                 );
