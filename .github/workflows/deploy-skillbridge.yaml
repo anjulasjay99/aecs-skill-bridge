@@ -229,9 +229,35 @@ jobs:
             # 🚀 Deployments
             - name: 🚀 Apply Services & Deployments
               run: |
-                  echo "📦 Applying deployments..."
-                  kubectl apply -f k8s/services-deployments.yaml -n $NAMESPACE
-                  echo "✅ All deployments applied."
+                  echo "📦 Preparing deployments with environment variable substitution..."
+
+                  # Get AWS account ID and region
+                  export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  export AWS_REGION="${AWS_REGION}"
+                  export IMAGE_TAG="${IMAGE_TAG}"
+
+                  echo "🔧 AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
+                  echo "🔧 AWS_REGION: $AWS_REGION"
+                  echo "🔧 IMAGE_TAG: $IMAGE_TAG"
+
+                  # Check if envsubst is available, install if not
+                  if ! command -v envsubst &> /dev/null; then
+                    echo "📦 Installing gettext-base for envsubst..."
+                    sudo apt-get update && sudo apt-get install -y gettext-base
+                  fi
+
+                  # Substitute environment variables and apply
+                  echo "🔄 Substituting environment variables in deployments..."
+                  envsubst < k8s/services-deployments.yaml | kubectl apply -f - -n $NAMESPACE
+
+                  echo "✅ All deployments applied with correct image references."
+
+                  # Wait a moment for deployments to be created
+                  sleep 5
+
+                  # Show deployment status
+                  echo "📊 Deployment status:"
+                  kubectl get deployments -n $NAMESPACE
 
             # 🌐 Edge Nginx
             - name: 🌐 Apply Edge NGINX (ConfigMap + Deployment + Service)
