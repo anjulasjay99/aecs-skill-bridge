@@ -2,7 +2,7 @@ name: Build, Push, K8s Apply, APIGW
 
 on:
     push:
-        branches: ["feature/cloud-deployment-setup"]
+        branches: []
     workflow_dispatch:
 
 env:

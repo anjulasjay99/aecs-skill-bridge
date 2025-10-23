@@ -2,7 +2,7 @@ name: Destroy SkillBridge Infrastructure
 
 on:
     push:
-        branches: [destroy]
+        branches: ["feature/cloud-deployment-setup"]
     workflow_dispatch:
 
 env:
