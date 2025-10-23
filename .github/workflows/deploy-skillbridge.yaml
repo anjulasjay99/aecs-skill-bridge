@@ -66,7 +66,12 @@ jobs:
                   echo "✅ eksctl installed: $(eksctl version)"
 
                   echo "📦 Installing kubectl..."
-                  curl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/1.30.0/2024-07-10/bin/linux/amd64/kubectl"
+                  # Fetch the cluster version dynamically so it always matches EKS cluster
+                  CLUSTER_VERSION=$(aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION --query "cluster.version" --output text)
+                  echo "🔎 EKS cluster version: $CLUSTER_VERSION"
+
+                  # Map to the right S3 URL for kubectl
+                  curl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/${CLUSTER_VERSION}/2024-07-10/bin/linux/amd64/kubectl"
                   chmod +x kubectl
                   sudo mv kubectl /usr/local/bin/
                   echo "✅ kubectl installed: $(kubectl version --client --short)"
