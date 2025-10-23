@@ -1,16 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "SkillBridge - Core Infra (VPC, EKS, ECR) – Stack A"
+Description: SkillBridge EKS Infrastructure Stack - CloudFormation Template
 
 Parameters:
-    ProjectName:
-        Type: String
-        Default: skillbridge
     ClusterName:
         Type: String
         Default: skillbridge-eks
-    KubernetesVersion:
-        Type: String
-        Default: "1.29"
     NodeInstanceType:
         Type: String
         Default: t3.medium
@@ -19,132 +13,185 @@ Parameters:
         Default: 2
     MaxCapacity:
         Type: Number
-        Default: 4
+        Default: 3
     MinCapacity:
         Type: Number
-        Default: 2
+        Default: 1
 
 Resources:
-    # ---------------- VPC ----------------
+    # ---------------------------
+    # Networking Layer (VPC)
+    # ---------------------------
     VPC:
         Type: AWS::EC2::VPC
         Properties:
-            CidrBlock: 10.42.0.0/16
-            EnableDnsHostnames: true
+            CidrBlock: 10.0.0.0/16
             EnableDnsSupport: true
+            EnableDnsHostnames: true
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-vpc"
+                  Value: !Sub "${ClusterName}-vpc"
 
     InternetGateway:
         Type: AWS::EC2::InternetGateway
         Properties:
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-igw"
+                  Value: !Sub "${ClusterName}-igw"
 
-    AttachIgw:
+    AttachGateway:
         Type: AWS::EC2::VPCGatewayAttachment
         Properties:
             VpcId: !Ref VPC
             InternetGatewayId: !Ref InternetGateway
 
-    PublicSubnetA:
+    # ---------------------------
+    # Public Subnets
+    # ---------------------------
+    PublicSubnet1:
         Type: AWS::EC2::Subnet
         Properties:
             VpcId: !Ref VPC
+            CidrBlock: 10.0.1.0/24
             AvailabilityZone: !Select [0, !GetAZs ""]
-            CidrBlock: 10.42.0.0/20
             MapPublicIpOnLaunch: true
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-pub-a"
-                # CRITICAL: Tags required for AWS Load Balancer Controller
+                  Value: !Sub "${ClusterName}-public-subnet-1"
                 - Key: kubernetes.io/role/elb
                   Value: "1"
                 - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
-                  Value: shared
+                  Value: "shared"
 
-    PublicSubnetB:
+    PublicSubnet2:
         Type: AWS::EC2::Subnet
         Properties:
             VpcId: !Ref VPC
+            CidrBlock: 10.0.2.0/24
             AvailabilityZone: !Select [1, !GetAZs ""]
-            CidrBlock: 10.42.16.0/20
             MapPublicIpOnLaunch: true
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-pub-b"
-                # CRITICAL: Tags required for AWS Load Balancer Controller
+                  Value: !Sub "${ClusterName}-public-subnet-2"
                 - Key: kubernetes.io/role/elb
                   Value: "1"
                 - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
-                  Value: shared
+                  Value: "shared"
 
-    PublicRT:
+    # ---------------------------
+    # Private Subnets
+    # ---------------------------
+    PrivateSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: 10.0.3.0/24
+            AvailabilityZone: !Select [0, !GetAZs ""]
+            MapPublicIpOnLaunch: false
+            Tags:
+                - Key: Name
+                  Value: !Sub "${ClusterName}-private-subnet-1"
+                - Key: kubernetes.io/role/internal-elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: "shared"
+
+    PrivateSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            CidrBlock: 10.0.4.0/24
+            AvailabilityZone: !Select [1, !GetAZs ""]
+            MapPublicIpOnLaunch: false
+            Tags:
+                - Key: Name
+                  Value: !Sub "${ClusterName}-private-subnet-2"
+                - Key: kubernetes.io/role/internal-elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: "shared"
+
+    # ---------------------------
+    # Routing
+    # ---------------------------
+    PublicRouteTable:
         Type: AWS::EC2::RouteTable
         Properties:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-public-rt"
-
-    PublicRTA:
-        Type: AWS::EC2::SubnetRouteTableAssociation
-        Properties:
-            SubnetId: !Ref PublicSubnetA
-            RouteTableId: !Ref PublicRT
-
-    PublicRTB:
-        Type: AWS::EC2::SubnetRouteTableAssociation
-        Properties:
-            SubnetId: !Ref PublicSubnetB
-            RouteTableId: !Ref PublicRT
+                  Value: !Sub "${ClusterName}-public-rt"
 
     PublicRoute:
         Type: AWS::EC2::Route
+        DependsOn: AttachGateway
         Properties:
-            RouteTableId: !Ref PublicRT
+            RouteTableId: !Ref PublicRouteTable
             DestinationCidrBlock: 0.0.0.0/0
             GatewayId: !Ref InternetGateway
 
-    # ---------------- Security Groups ----------------
-    ClusterSecurityGroup:
-        Type: AWS::EC2::SecurityGroup
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
         Properties:
-            GroupDescription: EKS cluster SG
+            SubnetId: !Ref PublicSubnet1
+            RouteTableId: !Ref PublicRouteTable
+
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PublicSubnet2
+            RouteTableId: !Ref PublicRouteTable
+
+    # NAT Gateway
+    NatEIP:
+        Type: AWS::EC2::EIP
+        Properties:
+            Domain: vpc
+
+    NatGateway:
+        Type: AWS::EC2::NatGateway
+        Properties:
+            AllocationId: !GetAtt NatEIP.AllocationId
+            SubnetId: !Ref PublicSubnet1
+            Tags:
+                - Key: Name
+                  Value: !Sub "${ClusterName}-natgw"
+
+    PrivateRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
             VpcId: !Ref VPC
             Tags:
                 - Key: Name
-                  Value: !Sub "${ProjectName}-eks-cluster-sg"
+                  Value: !Sub "${ClusterName}-private-rt"
 
-    NodeSecurityGroup:
-        Type: AWS::EC2::SecurityGroup
+    PrivateRoute:
+        Type: AWS::EC2::Route
         Properties:
-            GroupDescription: EKS node SG
-            VpcId: !Ref VPC
-            SecurityGroupIngress:
-                # Allow nodes to communicate with each other
-                - IpProtocol: -1
-                  FromPort: 0
-                  ToPort: 65535
-                  CidrIp: 10.42.0.0/16
+            RouteTableId: !Ref PrivateRouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            NatGatewayId: !Ref NatGateway
 
-                # Allow nodes to communicate with cluster control plane
-                - IpProtocol: -1
-                  FromPort: 0
-                  ToPort: 65535
-                  SourceSecurityGroupId: !Ref ClusterSecurityGroup
+    PrivateSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PrivateSubnet1
+            RouteTableId: !Ref PrivateRouteTable
 
-            Tags:
-                - Key: Name
-                  Value: !Sub "${ProjectName}-eks-node-sg"
+    PrivateSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PrivateSubnet2
+            RouteTableId: !Ref PrivateRouteTable
 
-    # ---------------- IAM for EKS ----------------
+    # ---------------------------
+    # EKS Cluster
+    # ---------------------------
     EKSClusterRole:
         Type: AWS::IAM::Role
         Properties:
             AssumeRolePolicyDocument:
+                Version: "2012-10-17"
                 Statement:
                     - Effect: Allow
                       Principal:
@@ -152,11 +199,33 @@ Resources:
                       Action: sts:AssumeRole
             ManagedPolicyArns:
                 - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+            Tags:
+                - Key: Name
+                  Value: !Sub "${ClusterName}-cluster-role"
 
+    EKSCluster:
+        Type: AWS::EKS::Cluster
+        Properties:
+            Name: !Ref ClusterName
+            Version: "1.30"
+            RoleArn: !GetAtt EKSClusterRole.Arn
+            ResourcesVpcConfig:
+                SubnetIds:
+                    - !Ref PublicSubnet1
+                    - !Ref PublicSubnet2
+                    - !Ref PrivateSubnet1
+                    - !Ref PrivateSubnet2
+                EndpointPublicAccess: true
+                EndpointPrivateAccess: false
+
+    # ---------------------------
+    # Node Group
+    # ---------------------------
     EKSNodeRole:
         Type: AWS::IAM::Role
         Properties:
             AssumeRolePolicyDocument:
+                Version: "2012-10-17"
                 Statement:
                     - Effect: Allow
                       Principal:
@@ -164,29 +233,11 @@ Resources:
                       Action: sts:AssumeRole
             ManagedPolicyArns:
                 - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
-                - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
                 - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
-                - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
-
-    NodeInstanceProfile:
-        Type: AWS::IAM::InstanceProfile
-        Properties:
-            Roles:
-                - !Ref EKSNodeRole
-
-    # ---------------- EKS ----------------
-    EKSCluster:
-        Type: AWS::EKS::Cluster
-        Properties:
-            Name: !Ref ClusterName
-            RoleArn: !GetAtt EKSClusterRole.Arn
-            Version: !Ref KubernetesVersion
-            ResourcesVpcConfig:
-                SubnetIds:
-                    - !Ref PublicSubnetA
-                    - !Ref PublicSubnetB
-                SecurityGroupIds:
-                    - !Ref ClusterSecurityGroup
+                - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+            Tags:
+                - Key: Name
+                  Value: !Sub "${ClusterName}-node-role"
 
     EKSNodeGroup:
         Type: AWS::EKS::Nodegroup
@@ -195,91 +246,41 @@ Resources:
             ClusterName: !Ref ClusterName
             NodeRole: !GetAtt EKSNodeRole.Arn
             ScalingConfig:
+                MinSize: !Ref MinCapacity
                 DesiredSize: !Ref DesiredCapacity
                 MaxSize: !Ref MaxCapacity
-                MinSize: !Ref MinCapacity
             Subnets:
-                - !Ref PublicSubnetA
-                - !Ref PublicSubnetB
-            AmiType: AL2_x86_64
+                - !Ref PrivateSubnet1
+                - !Ref PrivateSubnet2
             InstanceTypes:
                 - !Ref NodeInstanceType
+            AmiType: AL2_x86_64
+            DiskSize: 20
             Tags:
-                Project: !Ref ProjectName
-
-    # ---------------- ECR Repositories ----------------
-    ECRUser:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: user-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRAvailability:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: availability-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRSearch:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: search-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRBooking:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: booking-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRPayment:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: payment-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRFile:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: file-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRPairProgramming:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: pair-programming-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
-
-    ECRMessaging:
-        Type: AWS::ECR::Repository
-        Properties:
-            RepositoryName: messaging-service
-            ImageScanningConfiguration:
-                ScanOnPush: true
+                - Key: Name
+                  Value: !Sub "${ClusterName}-nodegroup"
 
 Outputs:
-    VpcId:
-        Value: !Ref VPC
-        Export:
-            Name: !Sub "${AWS::StackName}:VpcId"
-
-    PublicSubnetIds:
-        Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
-
-    ClusterNameOut:
+    ClusterName:
+        Description: Name of the EKS Cluster
         Value: !Ref ClusterName
-        Export:
-            Name: !Sub "${AWS::StackName}:ClusterName"
 
-    ClusterSecurityGroup:
-        Value: !Ref ClusterSecurityGroup
+    VPCId:
+        Description: The VPC ID
+        Value: !Ref VPC
 
-    NodeSecurityGroup:
-        Value: !Ref NodeSecurityGroup
+    PublicSubnet1Id:
+        Description: Public Subnet 1 ID
+        Value: !Ref PublicSubnet1
+
+    PublicSubnet2Id:
+        Description: Public Subnet 2 ID
+        Value: !Ref PublicSubnet2
+
+    PrivateSubnet1Id:
+        Description: Private Subnet 1 ID
+        Value: !Ref PrivateSubnet1
+
+    PrivateSubnet2Id:
+        Description: Private Subnet 2 ID
+        Value: !Ref PrivateSubnet2

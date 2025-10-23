@@ -216,14 +216,17 @@ jobs:
                   REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                   aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${REGISTRY}
                   services=( user-service availability-service search-service booking-service payment-service file-service pair-programming-service messaging-service )
-                  for s in "${services[@]}"; do
-                    echo "⚙️ Building image for $s..."
-                    docker build -t ${s}:latest ./services/${s}
-                    docker tag ${s}:latest ${REGISTRY}/${s}:${IMAGE_TAG}
-                    docker tag ${s}:latest ${REGISTRY}/${s}:latest
-                    docker push ${REGISTRY}/${s}:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${s}:latest
-                    echo "✅ $s pushed successfully."
+                  for SERVICE in "${services[@]}"; do
+                    if git diff --quiet HEAD~1 HEAD -- $SERVICE/; then
+                      echo "⚪ No changes detected in $SERVICE — skipping build."
+                    else
+                      echo "⚙️ Building image for $s..."
+                      docker build -t ${s}:latest ./services/${s}
+                      docker tag ${s}:latest ${REGISTRY}/${s}:${IMAGE_TAG}
+                      docker tag ${s}:latest ${REGISTRY}/${s}:latest
+                      docker push ${REGISTRY}/${s}:${IMAGE_TAG}
+                      docker push ${REGISTRY}/${s}:latest
+                      echo "✅ $s pushed successfully."
                   done
 
             # 🚀 Deployments
