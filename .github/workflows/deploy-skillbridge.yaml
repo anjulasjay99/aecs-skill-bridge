@@ -66,12 +66,12 @@ jobs:
                   echo "✅ eksctl installed: $(eksctl version)"
 
                   echo "📦 Installing kubectl..."
-                  # Fetch the cluster version dynamically so it always matches EKS cluster
+                  # Fetch the cluster version dynamically
                   CLUSTER_VERSION=$(aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION --query "cluster.version" --output text)
                   echo "🔎 EKS cluster version: $CLUSTER_VERSION"
 
-                  # Map to the right S3 URL for kubectl
-                  curl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/${CLUSTER_VERSION}/2024-07-10/bin/linux/amd64/kubectl"
+                  # Download kubectl using the correct stable URL format
+                  curl -LO "https://dl.k8s.io/release/v${CLUSTER_VERSION}.0/bin/linux/amd64/kubectl"
                   chmod +x kubectl
                   sudo mv kubectl /usr/local/bin/
                   echo "✅ kubectl installed: $(kubectl version --client --short)"
@@ -84,10 +84,25 @@ jobs:
             - name: 🧱 Install AWS LoadBalancer Controller
               run: |
                   echo "🚀 Installing AWS LoadBalancer Controller..."
+
+                  # Update kubeconfig to connect to the cluster
+                  aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
                   eksctl utils associate-iam-oidc-provider --cluster $CLUSTER_NAME --region $AWS_REGION --approve
 
                   curl -s -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
                   aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam-policy.json || echo "ℹ️ Policy already exists."
+
+                  # Create service account with IAM role
+                  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  eksctl create iamserviceaccount \
+                    --cluster=$CLUSTER_NAME \
+                    --namespace=kube-system \
+                    --name=aws-load-balancer-controller \
+                    --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
+                    --override-existing-serviceaccounts \
+                    --region $AWS_REGION \
+                    --approve
 
                   VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=skillbridge-vpc" --query "Vpcs[0].VpcId" --output text)
                   echo "🧩 VPC detected: $VPC_ID"
@@ -98,6 +113,7 @@ jobs:
                     -n kube-system \
                     --set clusterName=$CLUSTER_NAME \
                     --set serviceAccount.create=false \
+                    --set serviceAccount.name=aws-load-balancer-controller \
                     --set region=$AWS_REGION \
                     --set vpcId=$VPC_ID
                   echo "✅ AWS LoadBalancer Controller installed successfully."
