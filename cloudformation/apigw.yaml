@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "SkillBridge - API Gateway (HTTP API + VPC Link + Domain) — Stack B"
+
+Parameters:
+    ProjectName: { Type: String, Default: skillbridge }
+    DomainName:
+        {
+            Type: String,
+            Description: "Custom domain for API, e.g., api.skillbridge.com",
+        }
+    CertificateArn:
+        {
+            Type: String,
+            Description: "ACM cert in same region for the DomainName",
+        }
+    EdgeNlbArn:
+        Type: String
+        Description: "ARN of the NLB created by edge-nginx Service (discovered post K8s deploy)"
+    StageName: { Type: String, Default: prod }
+
+Resources:
+    HttpApi:
+        Type: AWS::ApiGatewayV2::Api
+        Properties:
+            Name: !Sub "${ProjectName}-http-api"
+            ProtocolType: HTTP
+            CorsConfiguration:
+                AllowOrigins: ["*"]
+                AllowMethods:
+                    ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+                AllowHeaders: ["*"]
+
+    VpcLink:
+        Type: AWS::ApiGatewayV2::VpcLink
+        Properties:
+            Name: !Sub "${ProjectName}-vpc-link"
+            SubnetIds: [] # Not required for Http APIs; they attach directly to NLB ARN
+            SecurityGroupIds: []
+            TargetArns: [!Ref EdgeNlbArn]
+
+    Integration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref HttpApi
+            Description: "Proxy to edge NGINX (supports HTTP + WebSocket upgrade)"
+            IntegrationType: HTTP_PROXY
+            IntegrationMethod: ANY
+            PayloadFormatVersion: "1.0"
+            ConnectionType: VPC_LINK
+            ConnectionId: !Ref VpcLink
+            IntegrationUri: !Ref EdgeNlbArn # For HttpApi+VPCLink, you pass the NLB ARN here
+
+    RouteProxyAny:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref HttpApi
+            RouteKey: "ANY /{proxy+}"
+            Target: !Join ["", ["integrations/", !Ref Integration]]
+
+    Deployment:
+        Type: AWS::ApiGatewayV2::Deployment
+        DependsOn: [RouteProxyAny]
+        Properties:
+            ApiId: !Ref HttpApi
+            Description: "Initial deploy"
+
+    Stage:
+        Type: AWS::ApiGatewayV2::Stage
+        Properties:
+            ApiId: !Ref HttpApi
+            StageName: !Ref StageName
+            DeploymentId: !Ref Deployment
+
+    DomainName:
+        Type: AWS::ApiGatewayV2::DomainName
+        Properties:
+            DomainName: !Ref DomainName
+            DomainNameConfigurations:
+                - CertificateArn: !Ref CertificateArn
+                  EndpointType: REGIONAL
+
+    ApiMapping:
+        Type: AWS::ApiGatewayV2::ApiMapping
+        Properties:
+            ApiId: !Ref HttpApi
+            DomainName: !Ref DomainName
+            Stage: !Ref Stage
+
+Outputs:
+    ApiInvokeUrl:
+        Value: !Sub "https://${DomainName}"
+    ApiId:
+        Value: !Ref HttpApi
+    VpcLinkId:
+        Value: !Ref VpcLink

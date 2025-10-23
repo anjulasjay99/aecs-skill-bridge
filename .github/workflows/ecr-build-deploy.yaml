@@ -1,0 +1,126 @@
+name: Build, Push, K8s Apply, APIGW
+
+on:
+    push:
+        branches: ["feature/cloud-deployment-setup"]
+    workflow_dispatch:
+
+env:
+    AWS_REGION: ap-southeast-1
+    STACK_A: skillbridge-infra
+    STACK_B: skillbridge-apigw
+    CLUSTER_NAME: skillbridge-eks
+    NAMESPACE: skillbridge
+    ECR_PREFIX: ""
+    IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        permissions: { id-token: write, contents: read }
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Configure AWS (OIDC or Keys)
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: Deploy Stack A (infra)
+              run: |
+                  aws cloudformation deploy \
+                    --stack-name $STACK_A \
+                    --template-file cloudformation/infra.yaml \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --no-fail-on-empty-changeset
+
+            - name: Update kubeconfig
+              run: aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
+            - name: Create namespace
+              run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
+
+            - name: Build & Push all images
+              run: |
+                  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                  aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${REGISTRY}
+                  services=( user-service availability-service search-service booking-service payment-service file-service pair-programming-service messaging-service )
+                  for s in "${services[@]}"; do
+                    docker build -t ${s}:latest ./services/${s}
+                    docker tag ${s}:latest ${REGISTRY}/${s}:${IMAGE_TAG}
+                    docker tag ${s}:latest ${REGISTRY}/${s}:latest
+                    docker push ${REGISTRY}/${s}:${IMAGE_TAG}
+                    docker push ${REGISTRY}/${s}:latest
+                  done
+
+            - name: Create/Update K8s secrets (from GH Secrets)
+              run: |
+                  kubectl -n $NAMESPACE delete secret app-secrets --ignore-not-found
+                  kubectl -n $NAMESPACE create secret generic app-secrets \
+                    --from-literal=ACCESS_KEY_ID="${{ secrets.AWS_S3_ACCESS_KEY_ID }}" \
+                    --from-literal=SECRET_ACCESS_KEY="${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}" \
+                    --from-literal=STRIPE_SECRET_KEY="${{ secrets.STRIPE_SECRET_KEY }}" \
+                    --from-literal=MONGODB_URI="${{ secrets.MONGODB_URI }}"
+
+            - name: Apply ConfigMaps
+              run: |
+                  if [ -d k8s/configmaps ]; then
+                    kubectl apply -f k8s/configmaps/ -n $NAMESPACE
+                  fi
+
+            - name: Apply services + deployments (aligned to your local ports)
+              run: kubectl apply -f k8s/services-deployments.yaml -n $NAMESPACE
+
+            - name: Apply edge nginx (ConfigMap, Deployment, Service)
+              run: |
+                  kubectl apply -f k8s/edge-nginx-configmap.yaml -n $NAMESPACE
+                  kubectl apply -f k8s/edge-nginx-deployment.yaml -n $NAMESPACE
+
+            - name: Wait for edge NLB & capture DNS
+              id: nlb
+              run: |
+                  for i in {1..60}; do
+                    DNS=$(kubectl -n $NAMESPACE get svc edge-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                    if [ -n "$DNS" ]; then
+                      echo "dns=$DNS" >> $GITHUB_OUTPUT
+                      break
+                    fi
+                    echo "Waiting for edge NLB... ($i/60)"
+                    sleep 10
+                  done
+                  if [ -z "${{ steps.nlb.outputs.dns }}" ]; then
+                    echo "Edge NLB did not become ready."
+                    exit 1
+                  fi
+                  echo "Edge NLB: ${{ steps.nlb.outputs.dns }}"
+
+            - name: Resolve NLB ARN from DNS
+              id: nlbarn
+              run: |
+                  # Discover matching NLB by DNS via elbv2 (describe-load-balancers)
+                  ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" --output text)
+                  if [ -z "$ARN" ]; then
+                    echo "Could not resolve NLB ARN."
+                    exit 1
+                  fi
+                  echo "arn=$ARN" >> $GITHUB_OUTPUT
+
+            - name: Deploy Stack B (API Gateway)
+              env:
+                  DOMAIN_NAME: ${{ secrets.API_DOMAIN_NAME }} # e.g., api.skillbridge.com
+                  CERT_ARN: ${{ secrets.API_DOMAIN_CERT_ARN }} # ACM cert in same region
+              run: |
+                  aws cloudformation deploy \
+                    --stack-name $STACK_B \
+                    --template-file cloudformation/apigw.yaml \
+                    --parameter-overrides \
+                      ProjectName=skillbridge \
+                      DomainName=${DOMAIN_NAME} \
+                      CertificateArn=${CERT_ARN} \
+                      EdgeNlbArn=${{ steps.nlbarn.outputs.arn }} \
+                      StageName=prod \
+                    --no-fail-on-empty-changeset

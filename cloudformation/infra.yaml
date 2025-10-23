@@ -1,0 +1,259 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "SkillBridge - Core Infra (VPC, EKS, ECR) — Stack A"
+
+Parameters:
+    ProjectName:
+        Type: String
+        Default: skillbridge
+    ClusterName:
+        Type: String
+        Default: skillbridge-eks
+    KubernetesVersion:
+        Type: String
+        Default: "1.29"
+    NodeInstanceType:
+        Type: String
+        Default: t3.medium
+    DesiredCapacity:
+        Type: Number
+        Default: 2
+    MaxCapacity:
+        Type: Number
+        Default: 4
+    MinCapacity:
+        Type: Number
+        Default: 2
+
+Mappings: {}
+
+Resources:
+    # ---------------- VPC ----------------
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: 10.42.0.0/16
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+            Tags:
+                - { Key: Name, Value: !Sub "${ProjectName}-vpc" }
+
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-igw" }]
+
+    AttachIgw:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            VpcId: !Ref VPC
+            InternetGatewayId: !Ref InternetGateway
+
+    PublicSubnetA:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Select [0, !GetAZs ""]
+            CidrBlock: 10.42.0.0/20
+            MapPublicIpOnLaunch: true
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-pub-a" }]
+
+    PublicSubnetB:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Select [1, !GetAZs ""]
+            CidrBlock: 10.42.16.0/20
+            MapPublicIpOnLaunch: true
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-pub-b" }]
+
+    PublicRT:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref VPC
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-rt" }]
+
+    PublicRTA:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PublicSubnetA
+            RouteTableId: !Ref PublicRT
+
+    PublicRTB:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            SubnetId: !Ref PublicSubnetB
+            RouteTableId: !Ref PublicRT
+
+    PublicRoute:
+        Type: AWS::EC2::Route
+        Properties:
+            RouteTableId: !Ref PublicRT
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+
+    ClusterSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: EKS cluster SG
+            VpcId: !Ref VPC
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-eks-cluster-sg" }]
+
+    NodeSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: EKS node SG
+            VpcId: !Ref VPC
+            SecurityGroupIngress:
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 65535
+                  SourceSecurityGroupId: !Ref NodeSecurityGroup
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 65535
+                  SourceSecurityGroupId: !Ref ClusterSecurityGroup
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-eks-node-sg" }]
+
+    # ---------------- IAM for EKS ----------------
+    EKSClusterRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal: { Service: eks.amazonaws.com }
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+    EKSNodeRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal: { Service: ec2.amazonaws.com }
+                      Action: sts:AssumeRole
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+                - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+                - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+                - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+    NodeInstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Roles: [!Ref EKSNodeRole]
+
+    # ---------------- EKS ----------------
+    EKSCluster:
+        Type: AWS::EKS::Cluster
+        Properties:
+            Name: !Ref ClusterName
+            RoleArn: !GetAtt EKSClusterRole.Arn
+            Version: !Ref KubernetesVersion
+            ResourcesVpcConfig:
+                SubnetIds: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+                SecurityGroupIds: [!Ref ClusterSecurityGroup]
+
+    EKSNodeGroup:
+        Type: AWS::EKS::Nodegroup
+        DependsOn: EKSCluster
+        Properties:
+            ClusterName: !Ref ClusterName
+            NodeRole: !GetAtt EKSNodeRole.Arn
+            ScalingConfig:
+                DesiredSize: !Ref DesiredCapacity
+                MaxSize: !Ref MaxCapacity
+                MinSize: !Ref MinCapacity
+            Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+            AmiType: AL2_x86_64
+            InstanceTypes: [!Ref NodeInstanceType]
+            Tags:
+                Project: !Ref ProjectName
+
+    # ---------------- ECR repos (8) ----------------
+    ECRUser:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: user-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRAvailability:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: availability-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRSearch:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: search-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRBooking:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: booking-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRPayment:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: payment-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRFile:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: file-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRPairProgramming:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: pair-programming-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+    ECRMessaging:
+        {
+            Type: AWS::ECR::Repository,
+            Properties:
+                {
+                    RepositoryName: messaging-service,
+                    ImageScanningConfiguration: { ScanOnPush: true },
+                },
+        }
+
+Outputs:
+    VpcId: { Value: !Ref VPC, Export: { Name: !Sub "${AWS::StackName}:VpcId" } }
+    PublicSubnetIds:
+        { Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]] }
+    ClusterNameOut:
+        {
+            Value: !Ref ClusterName,
+            Export: { Name: !Sub "${AWS::StackName}:ClusterName" },
+        }
+    ClusterSecurityGroup: { Value: !Ref ClusterSecurityGroup }
+    NodeSecurityGroup: { Value: !Ref NodeSecurityGroup }

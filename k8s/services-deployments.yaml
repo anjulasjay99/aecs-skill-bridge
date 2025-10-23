@@ -1,37 +1,44 @@
+# ====================== GLOBAL APP SECRETS ======================
 apiVersion: v1
 kind: Secret
 metadata:
-    name: mongodb-uri
+    name: app-secrets
     namespace: skillbridge
 type: Opaque
 stringData:
-    # filled by workflow; placeholder ignored on apply --prune
-    uri: "REPLACED_BY_CI"
+    ACCESS_KEY_ID: "REPLACED_BY_CI"
+    SECRET_ACCESS_KEY: "REPLACED_BY_CI"
+    STRIPE_SECRET_KEY: "REPLACED_BY_CI"
+    MONGODB_URI: "REPLACED_BY_CI"
 
 ---
+# ====================== USER SERVICE ======================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
     name: user-service
     namespace: skillbridge
 spec:
-    replicas: 1
-    selector: { matchLabels: { app: user-service } }
+    replicas: 2
+    selector:
+        matchLabels:
+            app: user-service
     template:
-        metadata: { labels: { app: user-service } }
+        metadata:
+            labels:
+                app: user-service
         spec:
             containers:
                 - name: user-service
                   image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/user-service:latest
-                  ports: [{ containerPort: 3001 }]
-                  env:
-                      - { name: PORT, value: "3001" }
-                      - { name: DB_NAME, value: "user_db" }
-                      - name: MONGODB_URI
-                        valueFrom:
-                            secretKeyRef:
-                                name: mongodb-uri
-                                key: uri
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3000
+                  envFrom:
+                      - configMapRef:
+                            name: user-service-env
+                      - secretRef:
+                            name: app-secrets
 ---
 apiVersion: v1
 kind: Service
@@ -40,68 +47,40 @@ metadata:
     namespace: skillbridge
 spec:
     type: ClusterIP
-    selector: { app: user-service }
-    ports: [{ port: 3001, targetPort: 3001 }]
+    selector:
+        app: user-service
+    ports:
+        - port: 3000
+          targetPort: 3000
 
 ---
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-    name: booking-service
-    namespace: skillbridge
-spec:
-    replicas: 1
-    selector: { matchLabels: { app: booking-service } }
-    template:
-        metadata: { labels: { app: booking-service } }
-        spec:
-            containers:
-                - name: booking-service
-                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/booking-service:latest
-                  ports: [{ containerPort: 3002 }]
-                  env:
-                      - { name: PORT, value: "3002" }
-                      - { name: DB_NAME, value: "booking_db" }
-                      - name: MONGODB_URI
-                        valueFrom:
-                            secretKeyRef:
-                                name: mongodb-uri
-                                key: uri
----
-apiVersion: v1
-kind: Service
-metadata:
-    name: booking-service
-    namespace: skillbridge
-spec:
-    type: ClusterIP
-    selector: { app: booking-service }
-    ports: [{ port: 3002, targetPort: 3002 }]
-
----
+# ====================== AVAILABILITY SERVICE ======================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
     name: availability-service
     namespace: skillbridge
 spec:
-    replicas: 1
-    selector: { matchLabels: { app: availability-service } }
+    replicas: 2
+    selector:
+        matchLabels:
+            app: availability-service
     template:
-        metadata: { labels: { app: availability-service } }
+        metadata:
+            labels:
+                app: availability-service
         spec:
             containers:
                 - name: availability-service
                   image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/availability-service:latest
-                  ports: [{ containerPort: 3003 }]
-                  env:
-                      - { name: PORT, value: "3003" }
-                      - { name: DB_NAME, value: "availability_db" }
-                      - name: MONGODB_URI
-                        valueFrom:
-                            secretKeyRef:
-                                name: mongodb-uri
-                                key: uri
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3001
+                  envFrom:
+                      - configMapRef:
+                            name: availability-service-env
+                      - secretRef:
+                            name: app-secrets
 ---
 apiVersion: v1
 kind: Service
@@ -110,33 +89,40 @@ metadata:
     namespace: skillbridge
 spec:
     type: ClusterIP
-    selector: { app: availability-service }
-    ports: [{ port: 3003, targetPort: 3003 }]
+    selector:
+        app: availability-service
+    ports:
+        - port: 3001
+          targetPort: 3001
 
 ---
+# ====================== SEARCH SERVICE ======================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
     name: search-service
     namespace: skillbridge
 spec:
-    replicas: 1
-    selector: { matchLabels: { app: search-service } }
+    replicas: 2
+    selector:
+        matchLabels:
+            app: search-service
     template:
-        metadata: { labels: { app: search-service } }
+        metadata:
+            labels:
+                app: search-service
         spec:
             containers:
                 - name: search-service
                   image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/search-service:latest
-                  ports: [{ containerPort: 3004 }]
-                  env:
-                      - { name: PORT, value: "3004" }
-                      - { name: DB_NAME, value: "user_db" }
-                      - name: MONGODB_URI
-                        valueFrom:
-                            secretKeyRef:
-                                name: mongodb-uri
-                                key: uri
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3003
+                  envFrom:
+                      - configMapRef:
+                            name: search-service-env
+                      - secretRef:
+                            name: app-secrets
 ---
 apiVersion: v1
 kind: Service
@@ -145,5 +131,218 @@ metadata:
     namespace: skillbridge
 spec:
     type: ClusterIP
-    selector: { app: search-service }
-    ports: [{ port: 3004, targetPort: 3004 }]
+    selector:
+        app: search-service
+    ports:
+        - port: 3003
+          targetPort: 3003
+
+---
+# ====================== BOOKING SERVICE ======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: booking-service
+    namespace: skillbridge
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: booking-service
+    template:
+        metadata:
+            labels:
+                app: booking-service
+        spec:
+            containers:
+                - name: booking-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/booking-service:latest
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3004
+                  envFrom:
+                      - configMapRef:
+                            name: booking-service-env
+                      - secretRef:
+                            name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: booking-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector:
+        app: booking-service
+    ports:
+        - port: 3004
+          targetPort: 3004
+
+---
+# ====================== FILE SERVICE ======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: file-service
+    namespace: skillbridge
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: file-service
+    template:
+        metadata:
+            labels:
+                app: file-service
+        spec:
+            containers:
+                - name: file-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/file-service:latest
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3005
+                  envFrom:
+                      - configMapRef:
+                            name: file-service-env
+                      - secretRef:
+                            name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: file-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector:
+        app: file-service
+    ports:
+        - port: 3005
+          targetPort: 3005
+
+---
+# ====================== PAIR PROGRAMMING SERVICE ======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: pair-programming-service
+    namespace: skillbridge
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: pair-programming-service
+    template:
+        metadata:
+            labels:
+                app: pair-programming-service
+        spec:
+            containers:
+                - name: pair-programming-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/pair-programming-service:latest
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3006
+                  envFrom:
+                      - configMapRef:
+                            name: pair-programming-service-env
+                      - secretRef:
+                            name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: pair-programming-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector:
+        app: pair-programming-service
+    ports:
+        - port: 3006
+          targetPort: 3006
+
+---
+# ====================== PAYMENT SERVICE ======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: payment-service
+    namespace: skillbridge
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: payment-service
+    template:
+        metadata:
+            labels:
+                app: payment-service
+        spec:
+            containers:
+                - name: payment-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/payment-service:latest
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3007
+                  envFrom:
+                      - configMapRef:
+                            name: payment-service-env
+                      - secretRef:
+                            name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: payment-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector:
+        app: payment-service
+    ports:
+        - port: 3007
+          targetPort: 3007
+
+---
+# ====================== MESSAGING SERVICE ======================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: messaging-service
+    namespace: skillbridge
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: messaging-service
+    template:
+        metadata:
+            labels:
+                app: messaging-service
+        spec:
+            containers:
+                - name: messaging-service
+                  image: ${AWS_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/messaging-service:latest
+                  imagePullPolicy: Always
+                  ports:
+                      - containerPort: 3002
+                  envFrom:
+                      - configMapRef:
+                            name: messaging-service-env
+                      - secretRef:
+                            name: app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: messaging-service
+    namespace: skillbridge
+spec:
+    type: ClusterIP
+    selector:
+        app: messaging-service
+    ports:
+        - port: 3002
+          targetPort: 3002
