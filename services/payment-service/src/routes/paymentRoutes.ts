@@ -74,7 +74,7 @@ router.get(
     async (req: Request, res: Response) => {
         try {
             const sessionId = req.params.id;
-            const token = req.headers.authorization; // ✅ pass it downstream
+            const token = req.headers.authorization; // pass it downstream
 
             const session = await stripe.checkout.sessions.retrieve(sessionId);
 
@@ -92,7 +92,7 @@ router.get(
                     .json({ error: "Missing metadata in Stripe session." });
             }
 
-            // ✅ Step 1 — Create booking
+            // Create booking
             const bookingRes = await axios.post(
                 `${process.env.BOOKING_SERVICE_URL}/bookings`,
                 {
@@ -110,7 +110,7 @@ router.get(
 
             const createdBooking = bookingRes.data?.booking || bookingRes.data;
 
-            // ✅ Step 2 — Update availability
+            // Update availability
             await axios.patch(
                 `${process.env.AVAILABILITY_SERVICE_URL}/availability/${slotId}`,
                 {

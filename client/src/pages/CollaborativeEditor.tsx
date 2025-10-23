@@ -61,7 +61,7 @@ const CollaborativeEditor = () => {
         };
     };
 
-    // === Socket setup ===
+    // Socket setup
     useEffect(() => {
         const socket = io(SIGNALING_URL, {
             path: "/live",
@@ -120,7 +120,7 @@ const CollaborativeEditor = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    // === Peer setup ===
+    //  Peer setup
     const createPeer = (peerId: string, initiator: boolean) => {
         if (peersRef.current.has(peerId)) return peersRef.current.get(peerId)!;
 
@@ -250,7 +250,7 @@ const CollaborativeEditor = () => {
         dc.onclose = () => addSys("⚠️ Channel closed");
     };
 
-    // === Chat ===
+    //  Chat
     const sendChat = () => {
         if (!chatText.trim()) return;
         broadcastJSON({ type: "chat", name: username, content: chatText });
@@ -258,7 +258,7 @@ const CollaborativeEditor = () => {
         setChatText("");
     };
 
-    // === Monaco loader fix ===
+    //  Monaco loader fix
     useEffect(() => {
         const loadMonaco = () => {
             if ((window as any).require) {

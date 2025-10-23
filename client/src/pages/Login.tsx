@@ -117,7 +117,6 @@ const Login = () => {
                     navigate("/discover");
                 })
                 .catch((error) => {
-                    console.log(error);
                     setLoginError("Invalid email or password");
                 });
 

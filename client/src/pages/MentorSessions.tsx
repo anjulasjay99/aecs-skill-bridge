@@ -72,14 +72,14 @@ const MentorSessions = () => {
     const userData = localStorage.getItem("user");
     const mentorId = userData ? JSON.parse(userData)?.user?._id : null;
 
-    // ---------- FETCH FUNCTIONS ----------
+    //  FETCH FUNCTIONS
 
     const fetchSlots = async () => {
         if (!mentorId) return;
         setLoading(true);
         setError(null);
         try {
-            // 1️⃣ Fetch mentor slots
+            // Fetch mentor slots
             const slotRes = await axios.get(
                 `${API_BASE_URL}/availability/${mentorId}`,
                 {
@@ -91,7 +91,7 @@ const MentorSessions = () => {
             const slotsData: Slot[] = slotRes.data?.slots || [];
             setSlots(slotsData);
 
-            // 2️⃣ Fetch bookings for slots that have bookingId
+            // Fetch bookings for slots that have bookingId
             const bookingMap: Record<string, Booking | null> = {};
             const menteeMap: Record<string, Mentee> = {};
 
@@ -113,7 +113,7 @@ const MentorSessions = () => {
                     const booking: Booking = bookingRes.data?.booking;
                     bookingMap[slot._id] = booking;
 
-                    // 3️⃣ Fetch mentee details
+                    // Fetch mentee details
                     if (booking?.menteeId) {
                         const userRes = await axios.get(
                             `${API_BASE_URL}/users/${booking.menteeId}`,
@@ -152,7 +152,7 @@ const MentorSessions = () => {
         fetchSlots();
     }, []);
 
-    // ---------- SLOT ACTIONS ----------
+    //  SLOT ACTIONS
 
     const handleFormChange = (e: any) => {
         const { name, value } = e.target;
@@ -238,7 +238,7 @@ const MentorSessions = () => {
         }
     };
 
-    // ---------- BOOKING CONFIRMATION ----------
+    //  BOOKING CONFIRMATION
 
     const openConfirmModal = (bookingId: string) => {
         setConfirmBookingId(bookingId);
@@ -268,7 +268,7 @@ const MentorSessions = () => {
         }
     };
 
-    // ---------- UI HELPERS ----------
+    //  UI HELPERS
 
     const formatDate = (date: string) =>
         new Date(date).toLocaleDateString("en-US", {
@@ -277,7 +277,7 @@ const MentorSessions = () => {
             day: "numeric",
         });
 
-    // ---------- RENDER ----------
+    //  RENDER
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden">

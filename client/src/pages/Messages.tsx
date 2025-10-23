@@ -55,19 +55,19 @@ const Messages = () => {
     const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const joinedWithRef = useRef<Set<string>>(new Set()); // ✅ guard duplicate joins
 
-    // ---------- Scroll ----------
+    //  Scroll
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // ---------- Load logged user ----------
+    //  Load logged user
     useEffect(() => {
         const userData = localStorage.getItem("user");
         const id = userData ? JSON.parse(userData)?.user?._id : null;
         setLoggedUserId(id);
     }, []);
 
-    // ---------- Helpers ----------
+    //  Helpers
     const preloadUser = async (id: string) => {
         if (!id || userCache[id]) return;
         try {
@@ -103,12 +103,12 @@ const Messages = () => {
         return normalizeConversations(res.data.conversations || []);
     };
 
-    // ---------- Socket setup ----------
+    //  Socket setup
     useEffect(() => {
         const handleConnect = async () => {
             setIsConnected(true);
 
-            // ✅ After hard refresh: fetch from server and join ALL rooms immediately
+            // After hard refresh: fetch from server and join ALL rooms immediately
             if (loggedUserId) {
                 try {
                     const data = await fetchConversations(loggedUserId);
@@ -140,7 +140,7 @@ const Messages = () => {
         };
 
         const handleReceive = (msg: Message) => {
-            // ✅ Only dedupe by _id; allow identical texts like "hi" twice
+            // Only dedupe by _id; allow identical texts like "hi" twice
             setActiveConversation((prev) => {
                 if (!prev) return prev;
 
@@ -230,7 +230,7 @@ const Messages = () => {
         };
     }, [loggedUserId, chatUserId]);
 
-    // ---------- Initial load into state (also used for sidebar + auto-select) ----------
+    //  Initial load into state (also used for sidebar + auto-select)
     useEffect(() => {
         (async () => {
             if (!loggedUserId) return;
@@ -275,7 +275,7 @@ const Messages = () => {
         })();
     }, [loggedUserId]);
 
-    // ---------- URL/user change: join active chat, fallback to REST if no socket event ----------
+    //  URL/user change: join active chat, fallback to REST if no socket event
     useEffect(() => {
         if (!socket.connected || !loggedUserId || !chatUserId) return;
         joinWith(chatUserId);
@@ -326,7 +326,7 @@ const Messages = () => {
         };
     }, [chatUserId, loggedUserId]);
 
-    // ---------- Ensure rejoin once all are ready (covers race after refresh) ----------
+    //  Ensure rejoin once all are ready (covers race after refresh)
     useEffect(() => {
         if (isConnected && loggedUserId && chatUserId) {
             joinWith(chatUserId);
@@ -341,7 +341,7 @@ const Messages = () => {
         isConnected &&
         message.trim().length > 0 &&
         activeConversation &&
-        !activeConversation._id.startsWith("pending-"); // ✅ wait until real conversation id exists
+        !activeConversation._id.startsWith("pending-"); // wait until real conversation id exists
 
     const sendMessage = () => {
         if (!canSend || !loggedUserId || !chatUserId) {

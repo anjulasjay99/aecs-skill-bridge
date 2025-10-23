@@ -49,7 +49,6 @@ interface Mentor {
 }
 
 const parseDurationHours = (start: string, end: string) => {
-    // supports HH:mm
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
     const mins = eh * 60 + em - (sh * 60 + sm);
@@ -82,7 +81,7 @@ const Mentor = () => {
             if (!mentorIdFromQuery) return;
             setLoadingMentor(true);
             try {
-                // ✅ correct endpoint (singular)
+                // correct endpoint (singular)
                 const res = await axios.get(
                     `${API_BASE_URL}/mentors/${mentorIdFromQuery}`,
                     {
@@ -162,7 +161,7 @@ const Mentor = () => {
         };
 
         if (mentorIdFromQuery) {
-            // ✅ use mentor._id for availability
+            // use mentor._id for availability
             fetchSlots(mentorIdFromQuery);
         }
     }, [mentorIdFromQuery]);
@@ -221,7 +220,7 @@ const Mentor = () => {
                 slotId: selectedSlot._id,
             };
 
-            // Step 1️⃣ — Create Stripe Checkout session
+            // Create Stripe Checkout session
             const res = await axios.post(
                 `${API_BASE_URL}/payments/create-session`,
                 sessionPayload,
@@ -232,7 +231,7 @@ const Mentor = () => {
                 }
             );
 
-            // Step 2️⃣ — Redirect user to Stripe Checkout
+            // Redirect user to Stripe Checkout
             if (res.data?.url) {
                 window.location.href = res.data.url;
             } else {
