@@ -1,0 +1,208 @@
+name: 🌩️ Build, Push, Deploy SkillBridge (EKS + API Gateway)
+
+on:
+    push:
+        branches: [deploy]
+    workflow_dispatch:
+
+env:
+    AWS_REGION: ap-southeast-1
+    STACK_A: skillbridge-infra
+    STACK_B: skillbridge-apigw
+    CLUSTER_NAME: skillbridge-eks
+    NAMESPACE: skillbridge
+    IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        permissions:
+            id-token: write
+            contents: read
+
+        steps:
+            # 🧾 Checkout
+            - name: 🧾 Checkout Repository
+              uses: actions/checkout@v4
+
+            # ⚙️ AWS Creds
+            - name: ⚙️ Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: 🔍 Verify AWS Identity
+              run: |
+                  echo "🔑 Checking AWS credentials..."
+                  aws sts get-caller-identity
+                  echo "✅ AWS credentials verified."
+
+            # ☁️ Deploy infra stack
+            - name: ☁️ Deploy Stack A (VPC + EKS + ECR)
+              run: |
+                  echo "🚧 Deploying CloudFormation stack: $STACK_A ..."
+                  aws cloudformation deploy \
+                    --stack-name $STACK_A \
+                    --template-file cloudformation/infra.yaml \
+                    --capabilities CAPABILITY_NAMED_IAM \
+                    --no-fail-on-empty-changeset
+                  echo "✅ Stack $STACK_A deployed."
+
+            # 📡 kubeconfig
+            - name: 📡 Update kubeconfig
+              run: |
+                  echo "🔁 Updating kubeconfig for cluster $CLUSTER_NAME ..."
+                  aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+                  echo "✅ kubeconfig ready."
+
+            # 🧱 Install AWS LoadBalancer Controller
+            - name: 🧱 Install AWS LoadBalancer Controller
+              run: |
+                  echo "🚀 Installing AWS LoadBalancer Controller..."
+                  eksctl utils associate-iam-oidc-provider --cluster $CLUSTER_NAME --region $AWS_REGION --approve
+
+                  curl -s -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+                  aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam-policy.json || echo "ℹ️ Policy already exists."
+
+                  VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=skillbridge-vpc" --query "Vpcs[0].VpcId" --output text)
+                  echo "🧩 VPC detected: $VPC_ID"
+
+                  kubectl apply -k "github.com/aws/eks-charts/stable/aws-load-balancer-controller//crds?ref=master"
+                  helm repo add eks https://aws.github.io/eks-charts && helm repo update
+                  helm upgrade -i aws-load-balancer-controller eks/aws-load-balancer-controller \
+                    -n kube-system \
+                    --set clusterName=$CLUSTER_NAME \
+                    --set serviceAccount.create=false \
+                    --set region=$AWS_REGION \
+                    --set vpcId=$VPC_ID
+                  echo "✅ AWS LoadBalancer Controller installed successfully."
+
+            # 🏗 Namespace
+            - name: 🏗️ Create Namespace
+              run: |
+                  kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
+                  echo "✅ Namespace $NAMESPACE ready."
+
+            # 🔐 Secrets
+            - name: 🔐 Create app-secrets
+              run: |
+                  echo "🔑 Creating app-secrets..."
+                  kubectl -n $NAMESPACE delete secret app-secrets --ignore-not-found
+                  kubectl -n $NAMESPACE create secret generic app-secrets \
+                    --from-literal=ACCESS_KEY_ID="${{ secrets.AWS_S3_ACCESS_KEY_ID }}" \
+                    --from-literal=SECRET_ACCESS_KEY="${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}" \
+                    --from-literal=STRIPE_SECRET_KEY="${{ secrets.STRIPE_SECRET_KEY }}" \
+                    --from-literal=MONGODB_URI="${{ secrets.MONGODB_URI }}"
+                  echo "✅ app-secrets created."
+
+            # 🧩 ConfigMaps
+            - name: 🧩 Apply ConfigMaps
+              run: |
+                  echo "📦 Applying ConfigMaps..."
+                  if [ -d k8s/configmaps ]; then
+                    kubectl apply -f k8s/configmaps/ -n $NAMESPACE
+                  else
+                    echo "ℹ️ No configmaps folder found, skipping."
+                  fi
+
+            # 🐳 Build + Push
+            - name: 🐳 Build & Push Service Images
+              run: |
+                  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                  aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${REGISTRY}
+                  services=( user-service availability-service search-service booking-service payment-service file-service pair-programming-service messaging-service )
+                  for s in "${services[@]}"; do
+                    echo "⚙️ Building image for $s..."
+                    docker build -t ${s}:latest ./services/${s}
+                    docker tag ${s}:latest ${REGISTRY}/${s}:${IMAGE_TAG}
+                    docker tag ${s}:latest ${REGISTRY}/${s}:latest
+                    docker push ${REGISTRY}/${s}:${IMAGE_TAG}
+                    docker push ${REGISTRY}/${s}:latest
+                    echo "✅ $s pushed successfully."
+                  done
+
+            # 🚀 Deployments
+            - name: 🚀 Apply Services & Deployments
+              run: |
+                  echo "📦 Applying deployments..."
+                  kubectl apply -f k8s/services-deployments.yaml -n $NAMESPACE
+                  echo "✅ All deployments applied."
+
+            # 🌐 Edge Nginx
+            - name: 🌐 Apply Edge NGINX (ConfigMap + Deployment + Service)
+              run: |
+                  echo "🧭 Applying edge NGINX gateway..."
+                  kubectl apply -f k8s/edge-nginx-configmap.yaml -n $NAMESPACE
+                  kubectl apply -f k8s/edge-nginx-deployment.yaml -n $NAMESPACE
+                  echo "✅ Edge NGINX applied."
+
+            # ⏳ Wait for NLB
+            - name: ⏳ Wait for Edge NLB & Capture DNS
+              id: nlb
+              run: |
+                  echo "🕒 Waiting for NLB hostname..."
+                  for i in {1..60}; do
+                    DNS=$(kubectl -n $NAMESPACE get svc edge-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+                    TYPE=$(kubectl -n $NAMESPACE get svc edge-nginx -o jsonpath='{.spec.type}' 2>/dev/null || true)
+                    echo "🔎 Attempt $i/60 | Type=$TYPE | DNS=${DNS:-N/A}"
+                    if [ -n "$DNS" ]; then
+                      echo "✅ NLB ready! Hostname: $DNS"
+                      echo "dns=$DNS" >> $GITHUB_OUTPUT
+                      break
+                    fi
+                    sleep 10
+                  done
+
+                  if [ -z "${{ steps.nlb.outputs.dns }}" ]; then
+                    echo "❌ Edge NLB not ready after 10 minutes."
+                    echo "🔍 Describing service..."
+                    kubectl describe svc edge-nginx -n $NAMESPACE || true
+                    echo "📋 Recent events:"
+                    kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 20
+                    echo "💡 Tips:"
+                    echo "   - Ensure AWS LoadBalancer Controller is running (kubectl get pods -n kube-system)."
+                    echo "   - Verify IAM permissions for NLB creation."
+                    exit 1
+                  fi
+
+            # 🔗 Resolve ARN
+            - name: 🔗 Resolve NLB ARN from DNS
+              id: nlbarn
+              run: |
+                  echo "🔍 Resolving ARN for NLB: ${{ steps.nlb.outputs.dns }}"
+                  ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" --output text)
+                  if [ -z "$ARN" ]; then
+                    echo "❌ Could not resolve NLB ARN."
+                    exit 1
+                  fi
+                  echo "✅ Found NLB ARN: $ARN"
+                  echo "arn=$ARN" >> $GITHUB_OUTPUT
+
+            # ☁️ Deploy API Gateway
+            - name: ☁️ Deploy Stack B (API Gateway)
+              env:
+                  DOMAIN_NAME: ${{ secrets.API_DOMAIN_NAME }}
+                  CERT_ARN: ${{ secrets.API_DOMAIN_CERT_ARN }}
+              run: |
+                  echo "🚀 Deploying API Gateway Stack..."
+                  aws cloudformation deploy \
+                    --stack-name $STACK_B \
+                    --template-file cloudformation/apigw.yaml \
+                    --parameter-overrides \
+                      ProjectName=skillbridge \
+                      DomainName=${DOMAIN_NAME} \
+                      CertificateArn=${CERT_ARN} \
+                      EdgeNlbArn=${{ steps.nlbarn.outputs.arn }} \
+                      StageName=prod \
+                    --no-fail-on-empty-changeset
+                  echo "✅ API Gateway deployed successfully."
+
+            # 📡 Show Endpoint
+            - name: 📡 Show API Gateway Endpoint
+              run: |
+                  echo "🔍 Fetching API Gateway endpoint..."
+                  API=$(aws cloudformation describe-stacks --stack-name $STACK_B --query "Stacks[0].Outputs[?OutputKey=='ApiInvokeUrl'].OutputValue" --output text)
+                  echo "🌐 API Endpoint: $API"
