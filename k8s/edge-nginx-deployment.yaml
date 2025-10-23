@@ -32,7 +32,6 @@ metadata:
     name: edge-nginx
     namespace: skillbridge
     annotations:
-        # If you're on AWS with EKS, this makes it an internet-facing NLB
         service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 spec:
     type: LoadBalancer

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "SkillBridge - Core Infra (VPC, EKS, ECR) — Stack A"
+Description: "SkillBridge - Core Infra (VPC, EKS, ECR) – Stack A"
 
 Parameters:
     ProjectName:
@@ -59,6 +59,11 @@ Resources:
             Tags:
                 - Key: Name
                   Value: !Sub "${ProjectName}-pub-a"
+                # CRITICAL: Tags required for AWS Load Balancer Controller
+                - Key: kubernetes.io/role/elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: shared
 
     PublicSubnetB:
         Type: AWS::EC2::Subnet
@@ -70,6 +75,11 @@ Resources:
             Tags:
                 - Key: Name
                   Value: !Sub "${ProjectName}-pub-b"
+                # CRITICAL: Tags required for AWS Load Balancer Controller
+                - Key: kubernetes.io/role/elb
+                  Value: "1"
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: shared
 
     PublicRT:
         Type: AWS::EC2::RouteTable

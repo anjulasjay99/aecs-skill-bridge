@@ -229,7 +229,7 @@ metadata:
     name: pair-programming-service
     namespace: skillbridge
 spec:
-    replicas: 2
+    replicas: 1
     selector:
         matchLabels:
             app: pair-programming-service
@@ -313,7 +313,7 @@ metadata:
     name: messaging-service
     namespace: skillbridge
 spec:
-    replicas: 2
+    replicas: 1
     selector:
         matchLabels:
             app: messaging-service
