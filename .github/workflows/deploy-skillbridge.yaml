@@ -60,17 +60,20 @@ jobs:
             # 🧱 Install dependencies for LoadBalancer Controller
             - name: 🧰 Install eksctl, kubectl, and helm
               run: |
-                  echo "📦 Installing eksctl, kubectl, and helm..."
+                  echo "📦 Installing eksctl..."
                   curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
                   sudo mv /tmp/eksctl /usr/local/bin
                   echo "✅ eksctl installed: $(eksctl version)"
 
-                  sudo curl -sSL -o /usr/local/bin/kubectl https://amazon-eks.s3.${AWS_REGION}.amazonaws.com/latest/2024-05-12/bin/linux/amd64/kubectl
-                  sudo chmod +x /usr/local/bin/kubectl
+                  echo "📦 Installing kubectl..."
+                  curl -LO "https://s3.us-west-2.amazonaws.com/amazon-eks/1.30.0/2024-07-10/bin/linux/amd64/kubectl"
+                  chmod +x kubectl
+                  sudo mv kubectl /usr/local/bin/
                   echo "✅ kubectl installed: $(kubectl version --client --short)"
 
+                  echo "📦 Installing helm..."
                   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-                  echo "✅ helm installed: $(helm version)"
+                  echo "✅ helm installed: $(helm version --short)"
 
             # 🧱 Install AWS LoadBalancer Controller
             - name: 🧱 Install AWS LoadBalancer Controller
