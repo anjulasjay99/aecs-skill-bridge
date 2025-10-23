@@ -57,6 +57,21 @@ jobs:
                   aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
                   echo "✅ kubeconfig ready."
 
+            # 🧱 Install dependencies for LoadBalancer Controller
+            - name: 🧰 Install eksctl, kubectl, and helm
+              run: |
+                  echo "📦 Installing eksctl, kubectl, and helm..."
+                  curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+                  sudo mv /tmp/eksctl /usr/local/bin
+                  echo "✅ eksctl installed: $(eksctl version)"
+
+                  sudo curl -sSL -o /usr/local/bin/kubectl https://amazon-eks.s3.${AWS_REGION}.amazonaws.com/latest/2024-05-12/bin/linux/amd64/kubectl
+                  sudo chmod +x /usr/local/bin/kubectl
+                  echo "✅ kubectl installed: $(kubectl version --client --short)"
+
+                  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+                  echo "✅ helm installed: $(helm version)"
+
             # 🧱 Install AWS LoadBalancer Controller
             - name: 🧱 Install AWS LoadBalancer Controller
               run: |
