@@ -1,0 +1,86 @@
+name: Destroy SkillBridge Infrastructure
+
+on:
+    push:
+        branches: [destroy]
+    workflow_dispatch:
+
+env:
+    AWS_REGION: ap-southeast-1
+    STACK_A: skillbridge-infra
+    STACK_B: skillbridge-apigw
+    CLUSTER_NAME: skillbridge-eks
+    NAMESPACE: skillbridge
+
+jobs:
+    destroy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: 🧾 Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Configure AWS Credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            - name: 🔍 Verify AWS Identity
+              run: aws sts get-caller-identity
+
+            # 1️⃣ Clean up Kubernetes workloads before deleting the cluster
+            - name: 🧹 Cleanup Kubernetes resources (if cluster still exists)
+              continue-on-error: true
+              run: |
+                  echo "🔎 Checking if EKS cluster $CLUSTER_NAME exists..."
+                  if aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION >/dev/null 2>&1; then
+                    echo "✅ Cluster found. Deleting Kubernetes resources..."
+                    aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+                    kubectl delete all --all -n $NAMESPACE --ignore-not-found
+                    kubectl delete namespace $NAMESPACE --ignore-not-found
+                    echo "✅ K8s resources deleted."
+                  else
+                    echo "ℹ️ Cluster does not exist or already deleted."
+                  fi
+
+            # 2️⃣ Delete API Gateway stack first
+            - name: ☁️ Delete Stack B (API Gateway)
+              run: |
+                  echo "🧨 Deleting CloudFormation stack: $STACK_B"
+                  aws cloudformation delete-stack --stack-name $STACK_B --region $AWS_REGION || true
+                  echo "⏳ Waiting for deletion of $STACK_B..."
+                  aws cloudformation wait stack-delete-complete --stack-name $STACK_B --region $AWS_REGION || true
+                  echo "✅ Stack B ($STACK_B) deleted."
+
+            # 3️⃣ Delete EKS & Infra stack
+            - name: ☁️ Delete Stack A (Infra)
+              run: |
+                  echo "🧨 Deleting CloudFormation stack: $STACK_A"
+                  aws cloudformation delete-stack --stack-name $STACK_A --region $AWS_REGION || true
+                  echo "⏳ Waiting for deletion of $STACK_A..."
+                  aws cloudformation wait stack-delete-complete --stack-name $STACK_A --region $AWS_REGION || true
+                  echo "✅ Stack A ($STACK_A) deleted."
+
+            # 4️⃣ Optional final sweep: check for leftovers
+            - name: 🔎 Verify deletion results
+              run: |
+                  echo "🔍 Checking for leftover CloudFormation stacks..."
+                  aws cloudformation list-stacks \
+                    --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE DELETE_FAILED ROLLBACK_FAILED \
+                    --region $AWS_REGION \
+                    --query "StackSummaries[?contains(StackName, 'skillbridge')].[StackName, StackStatus]" \
+                    --output table || true
+
+                  echo "🔍 Checking for ECR repositories..."
+                  aws ecr describe-repositories --region $AWS_REGION \
+                    --query "repositories[?contains(repositoryName, 'service')].[repositoryName]" \
+                    --output table || echo "✅ No ECR repositories found."
+
+                  echo "🔍 Checking for VPC leftovers..."
+                  aws ec2 describe-vpcs --region $AWS_REGION \
+                    --query "Vpcs[?contains(Tags[?Key=='Name'].Value | [0], 'skillbridge')].[VpcId,State]" \
+                    --output table || echo "✅ No VPCs found."
+
+                  echo "✅ Verification complete. SkillBridge environment destroyed."

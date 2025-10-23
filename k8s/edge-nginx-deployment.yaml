@@ -4,31 +4,40 @@ metadata:
     name: edge-nginx
     namespace: skillbridge
 spec:
-    replicas: 1
-    selector: { matchLabels: { app: edge-nginx } }
+    replicas: 2
+    selector:
+        matchLabels: { app: edge-nginx }
     template:
-        metadata: { labels: { app: edge-nginx } }
+        metadata:
+            labels: { app: edge-nginx }
         spec:
             containers:
                 - name: nginx
-                  image: nginx:stable
+                  image: nginx:1.27-alpine
                   ports: [{ containerPort: 80 }]
                   volumeMounts:
-                      - name: nginxconf
+                      - name: nginx-conf
                         mountPath: /etc/nginx/conf.d
             volumes:
-                - name: nginxconf
+                - name: nginx-conf
                   configMap:
                       name: edge-nginx-conf
+                      items:
+                          - key: default.conf
+                            path: default.conf
 ---
 apiVersion: v1
 kind: Service
 metadata:
     name: edge-nginx
     namespace: skillbridge
+    annotations:
+        # If you're on AWS with EKS, this makes it an internet-facing NLB
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 spec:
     type: LoadBalancer
     selector: { app: edge-nginx }
     ports:
-        - port: 80
+        - name: http
+          port: 80
           targetPort: 80

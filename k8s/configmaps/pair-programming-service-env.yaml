@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: pair-programming-service-env
+data:
+    PORT: "3006"
+    SERVICE_NAME: "pair-programming-service"
+    CORS_ORIGINS: "http://localhost:5173,https://skillbridge.app"
+    JWT_SECRET: "my_super_secret_key"
+    ALLOW_UNAUTH: "true"

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: file-service-env
+data:
+    PORT: "3005"
+    DB_NAME: "file_db"

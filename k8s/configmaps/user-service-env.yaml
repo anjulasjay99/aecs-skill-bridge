@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: user-service-env
+data:
+    PORT: "3000"
+    DB_NAME: "user_db"
