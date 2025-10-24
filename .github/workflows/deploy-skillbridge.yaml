@@ -324,7 +324,7 @@ jobs:
                     sleep 10
                   done
 
-                  if [ -z "${{ steps.nlb.outputs.dns }}" ]; then
+                  if [ -z "$(kubectl -n $NAMESPACE get svc edge-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)" ]; then
                     echo "❌ Edge NLB not ready after 10 minutes."
                     echo "🔍 Describing service..."
                     kubectl describe svc edge-nginx -n $NAMESPACE || true
@@ -336,41 +336,81 @@ jobs:
                     exit 1
                   fi
 
-            # 🔗 Resolve ARN
-            - name: 🔗 Resolve NLB ARN from DNS
-              id: nlbarn
+            # 🔗 Resolve Listener ARN
+            - name: 🔗 Resolve NLB Listener ARN from DNS
+              id: nlblistener
               run: |
-                  echo "🔍 Resolving ARN for NLB: ${{ steps.nlb.outputs.dns }}"
-                  ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" --output text)
-                  if [ -z "$ARN" ]; then
-                    echo "❌ Could not resolve NLB ARN."
+                  echo "🔍 Resolving NLB ARN for DNS: ${{ steps.nlb.outputs.dns }}"
+
+                  # Get NLB ARN from DNS name
+                  NLB_ARN=$(aws elbv2 describe-load-balancers \
+                    --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" \
+                    --output text)
+
+                  if [ -z "$NLB_ARN" ]; then
+                    echo "❌ Could not resolve NLB ARN from DNS."
                     exit 1
                   fi
-                  echo "✅ Found NLB ARN: $ARN"
-                  echo "arn=$ARN" >> $GITHUB_OUTPUT
+
+                  echo "✅ Found NLB ARN: $NLB_ARN"
+
+                  # Get Listener ARN from NLB ARN
+                  echo "🔍 Getting Listener ARN for NLB..."
+                  LISTENER_ARN=$(aws elbv2 describe-listeners \
+                    --load-balancer-arn "$NLB_ARN" \
+                    --query "Listeners[0].ListenerArn" \
+                    --output text)
+
+                  if [ -z "$LISTENER_ARN" ] || [ "$LISTENER_ARN" == "None" ]; then
+                    echo "❌ Could not find Listener ARN for NLB."
+                    echo "📋 Available listeners:"
+                    aws elbv2 describe-listeners --load-balancer-arn "$NLB_ARN" || true
+                    exit 1
+                  fi
+
+                  echo "✅ Found Listener ARN: $LISTENER_ARN"
+                  echo "listener_arn=$LISTENER_ARN" >> $GITHUB_OUTPUT
 
             # ☁️ Deploy API Gateway
             - name: ☁️ Deploy Stack B (API Gateway)
               env:
                   DOMAIN_NAME: ${{ secrets.API_DOMAIN_NAME }}
                   CERT_ARN: ${{ secrets.API_DOMAIN_CERT_ARN }}
+                  HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
               run: |
                   echo "🚀 Deploying API Gateway Stack..."
+                  echo "🔧 Using Listener ARN: ${{ steps.nlblistener.outputs.listener_arn }}"
+
                   aws cloudformation deploy \
                     --stack-name $STACK_B \
                     --template-file cloudformation/apigw.yaml \
                     --parameter-overrides \
                       ProjectName=skillbridge \
-                      DomainName=${DOMAIN_NAME} \
+                      CustomDomainName=${DOMAIN_NAME} \
                       CertificateArn=${CERT_ARN} \
-                      EdgeNlbArn=${{ steps.nlbarn.outputs.arn }} \
+                      EdgeNlbListenerArn=${{ steps.nlblistener.outputs.listener_arn }} \
                       StageName=prod \
+                      HostedZoneId=${HOSTED_ZONE_ID} \
                     --no-fail-on-empty-changeset
+
                   echo "✅ API Gateway deployed successfully."
 
             # 📡 Show Endpoint
             - name: 📡 Show API Gateway Endpoint
               run: |
                   echo "🔍 Fetching API Gateway endpoint..."
-                  API=$(aws cloudformation describe-stacks --stack-name $STACK_B --query "Stacks[0].Outputs[?OutputKey=='ApiInvokeUrl'].OutputValue" --output text)
-                  echo "🌐 API Endpoint: $API"
+                  API=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_B \
+                    --query "Stacks[0].Outputs[?OutputKey=='ApiInvokeUrl'].OutputValue" \
+                    --output text)
+
+                  DEFAULT_API=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_B \
+                    --query "Stacks[0].Outputs[?OutputKey=='ApiDefaultUrl'].OutputValue" \
+                    --output text)
+
+                  echo "✅ Deployment Complete!"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "🌐 Custom Domain API Endpoint: $API"
+                  echo "🔗 Default API Gateway URL: $DEFAULT_API"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
