@@ -257,8 +257,7 @@ Resources:
             AmiType: AL2_x86_64
             DiskSize: 20
             Tags:
-                - Key: Name
-                  Value: !Sub "${ClusterName}-nodegroup"
+                Name: !Sub "${ClusterName}-nodegroup"
 
 Outputs:
     ClusterName:
