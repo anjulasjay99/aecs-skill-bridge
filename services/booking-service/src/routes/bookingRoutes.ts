@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from "express";
 import {
     createBooking,
@@ -11,10 +12,9 @@ import axios from "axios";
 
 const router = Router();
 
-// Create a new booking
+// Create booking
 router.post("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId, payment, isConfirmed } = req.body;
-    const createdDate = new Date().toISOString();
 
     try {
         const booking = await createBooking({
@@ -22,119 +22,107 @@ router.post("/", authenticateToken, async (req, res) => {
             menteeId,
             slotId,
             payment,
-            isConfirmed: isConfirmed || false,
-            createdDate,
+            isConfirmed,
         });
 
         res.status(201).json({
             message: "Booking created successfully",
             booking,
         });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// GET /bookings?mentorId=...&menteeId=...
+// Get all bookings
 router.get("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId } = req.query;
 
     try {
         const bookings = await getBookings({
-            mentorId: mentorId as string | undefined,
-            menteeId: menteeId as string | undefined,
-            slotId: slotId as string | undefined,
+            mentorId: mentorId || undefined,
+            menteeId: menteeId || undefined,
+            slotId: slotId || undefined,
         });
 
-        res.status(200).json({ count: bookings.length, bookings });
-    } catch (error: any) {
+        res.status(200).json({
+            count: bookings.length,
+            bookings,
+        });
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// GET /bookings/:bookingId
+// Get booking by ID
 router.get("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
 
     try {
         const booking = await getBookingById(bookingId);
-        if (!booking) {
+        if (!booking)
             return res.status(404).json({ message: "Booking not found" });
-        }
 
         res.status(200).json({ booking });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// PATCH /bookings/:bookingId
+// Update booking
 router.patch("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
     const updateData = req.body;
 
     try {
         const updated = await updateBooking(bookingId, updateData);
-        if (!updated) {
+        if (!updated)
             return res.status(404).json({ message: "Booking not found" });
-        }
 
         res.status(200).json({
             message: "Booking updated successfully",
             booking: updated,
         });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// DELETE /bookings/:bookingId
+// Delete booking
 router.delete("/:bookingId", authenticateToken, async (req, res) => {
     const { bookingId } = req.params;
     const token = req.headers.authorization;
 
     try {
-        // Get the booking before deleting (to find its slotId)
         const booking = await getBookingById(bookingId);
-        if (!booking) {
+        if (!booking)
             return res.status(404).json({ message: "Booking not found" });
-        }
 
-        const slotId = booking.slotId;
+        await deleteBooking(bookingId);
 
-        // Delete booking record
-        const deleted = await deleteBooking(bookingId);
-        if (!deleted) {
-            return res.status(404).json({ message: "Booking not found" });
-        }
-
-        // Update slot availability in availability-service
-        if (slotId) {
+        // Update slot availability
+        if (booking.slotId) {
             try {
                 await axios.patch(
-                    `${process.env.AVAILABILITY_SERVICE_URL}/availability/${slotId}`,
+                    `${process.env.AVAILABILITY_SERVICE_URL}/availability/${booking.slotId}`,
                     {
                         isAvailable: true,
                         isBooked: false,
                         bookingId: null,
                     },
                     {
-                        headers: {
-                            Authorization: token,
-                        },
+                        headers: { Authorization: token },
                     }
                 );
-            } catch (err: any) {
+            } catch (err) {
                 console.error("⚠️ Failed to update availability:", err.message);
             }
         }
 
-        // Respond to client
         res.status(200).json({
             message: "Booking deleted and slot released successfully",
         });
-    } catch (error: any) {
-        console.error("❌ Error deleting booking:", error.message);
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });

@@ -1,18 +1,26 @@
-import { MentorProfile as MentorProfileDB } from "../models/MentorProfile.js";
+import { ddb, TABLE_NAME } from "../db/dbClient.js";
+import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import APIError from "../types/APIError.js";
-import { MentorProfile } from "../types/User.js";
+import { IMentorProfile } from "../models/MentorProfile.js";
 
-export const createMentorProfile = async (mentorProfile: MentorProfile) => {
-    const res = await MentorProfileDB.create(mentorProfile);
+export const createMentorProfile = async (mentorProfile: IMentorProfile) => {
+    try {
+        const item = {
+            PK: `USER#${mentorProfile.userId}`,
+            SK: "MENTORPROFILE",
+            ...mentorProfile,
+        };
 
-    if (res.errors) {
-        console.log(
-            `Error when creating the mentor profile: ${res.errors.errors}`
+        await ddb.send(
+            new PutCommand({
+                TableName: TABLE_NAME,
+                Item: item,
+            })
         );
-        throw new APIError(
-            "Could not create the mentor profile, try again later",
-            500
-        );
+
+        return item;
+    } catch (err: any) {
+        console.error("Error creating mentor profile:", err);
+        throw new APIError("Could not create mentor profile", 500);
     }
-    return res;
 };
