@@ -18,6 +18,7 @@ import {
     DollarSign,
     MessageSquare,
     Code,
+    Download,
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import { RootState } from "../store/store";
@@ -214,6 +215,17 @@ const Session = () => {
         }
     };
 
+    const handleDownload = (file: FileItem) => {
+        const link = document.createElement("a");
+        link.href = file.url;
+        link.download = file.fileName;
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center h-64">
@@ -397,14 +409,26 @@ const Session = () => {
                                                 </p>
                                             </div>
                                             {file.menteeId === loggedUserId && (
-                                                <button
-                                                    onClick={() =>
-                                                        handleDelete(file._id)
-                                                    }
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                <div className="flex items-center gap-3">
+                                                    <button
+                                                        onClick={() =>
+                                                            handleDownload(file)
+                                                        }
+                                                        className="text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() =>
+                                                            handleDelete(
+                                                                file._id
+                                                            )
+                                                        }
+                                                        className="text-red-500 hover:text-red-700"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
