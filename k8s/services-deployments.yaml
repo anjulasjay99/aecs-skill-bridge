@@ -50,7 +50,7 @@ spec:
     selector:
         app: user-service
     ports:
-        - port: 3000
+        - port: 80
           targetPort: 3000
 
 ---
@@ -92,7 +92,7 @@ spec:
     selector:
         app: availability-service
     ports:
-        - port: 3001
+        - port: 80
           targetPort: 3001
 
 ---
@@ -134,7 +134,7 @@ spec:
     selector:
         app: search-service
     ports:
-        - port: 3003
+        - port: 80
           targetPort: 3003
 
 ---
@@ -176,7 +176,7 @@ spec:
     selector:
         app: booking-service
     ports:
-        - port: 3004
+        - port: 80
           targetPort: 3004
 
 ---
@@ -218,7 +218,7 @@ spec:
     selector:
         app: file-service
     ports:
-        - port: 3005
+        - port: 80
           targetPort: 3005
 
 ---
@@ -260,7 +260,7 @@ spec:
     selector:
         app: pair-programming-service
     ports:
-        - port: 3006
+        - port: 80
           targetPort: 3006
 
 ---
@@ -302,7 +302,7 @@ spec:
     selector:
         app: payment-service
     ports:
-        - port: 3007
+        - port: 80
           targetPort: 3007
 
 ---
@@ -344,5 +344,5 @@ spec:
     selector:
         app: messaging-service
     ports:
-        - port: 3002
+        - port: 80
           targetPort: 3002
