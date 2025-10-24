@@ -57,25 +57,24 @@ const Discover = () => {
 
     // Dropdown options
     const domainOptions = [
-        "Backend",
         "Frontend",
+        "Backend",
         "DevOps",
-        "Data",
-        "AWS",
-        "Node.js",
-        "API",
+        "Data Science",
+        "AI/ML",
     ];
     const designationOptions = [
         "Software Engineer",
         "Senior Engineer",
-        "Staff Engineer",
-        "Principal Engineer",
+        "Tech Lead",
+        "Architect",
+        "Instructor",
     ];
     const badgeOptions = [
-        "Code Reviewer",
-        "Supervisor",
         "Interview Coach",
         "System Design Specialist",
+        "Code Reviewer",
+        "Career Mentor",
     ];
     const expOptions = ["1", "2", "3", "5", "10+"];
     const rateOptions = ["10", "20", "30", "40", "50"];
