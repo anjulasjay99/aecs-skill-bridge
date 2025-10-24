@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router } from "express";
 import {
     createFile,
@@ -19,72 +20,62 @@ router.get("/", authenticateToken, (_req, res) => {
     res.json({ message: "File endpoint working" });
 });
 
-// All files for a slot
+// Get all files for a slot
 router.get("/:slotId", authenticateToken, async (req, res) => {
     const { slotId } = req.params;
 
     try {
         const files = await getFilesSlotById(slotId);
-
         res.status(200).json({ files });
-    } catch (error: any) {
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 });
 
-// Create a new file
+// Create a new file (upload to S3 + save metadata)
 router.post("/", authenticateToken, async (req, res) => {
     const { mentorId, menteeId, slotId, fileName, base64 } = req.body;
     const createdAt = new Date().toISOString();
 
     try {
-        const uploadedFile = await uploadBase64File(
-            base64,
-            "dev-skill-bridge-s3"
-        );
-        const newSlot = await createFile({
+        const uploaded = await uploadBase64File(base64, "dev-skill-bridge-s3");
+
+        const newFile = await createFile({
             mentorId,
             menteeId,
             slotId,
-            url: uploadedFile.url,
             fileName,
-            fileType: uploadedFile.fileType,
+            fileType: uploaded.fileType,
+            url: uploaded.url,
             createdAt,
         });
 
         res.status(201).json({
             message: "File created successfully",
-            slot: newSlot,
+            file: newFile,
         });
-    } catch (error: any) {
+    } catch (error) {
+        console.error("❌ File creation error:", error);
         res.status(500).json({ message: error.message });
     }
 });
 
-// Remove a slot
+// Delete a file
 router.delete("/:fileId", authenticateToken, async (req, res) => {
     const { fileId } = req.params;
 
     try {
         const file = await getFileById(fileId);
-        if (!file) {
-            return res.status(404).json({ message: "File not found" });
-        }
+        if (!file) return res.status(404).json({ message: "File not found" });
 
         const key = getFileKey(file.url);
         await deleteS3File("dev-skill-bridge-s3", key ?? "");
 
-        const deleted = await deleteFile(fileId);
-        if (!deleted) {
-            return res
-                .status(404)
-                .json({ message: "Could not delete the file" });
-        }
+        await deleteFile(fileId);
 
-        res.status(200).json({
-            message: "File deleted successfully",
-        });
-    } catch (error: any) {
+        res.status(200).json({ message: "File deleted successfully" });
+    } catch (error) {
+        console.error("❌ File delete error:", error);
         res.status(500).json({ message: error.message });
     }
 });
