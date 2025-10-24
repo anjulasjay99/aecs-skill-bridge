@@ -1,8 +1,12 @@
 // @ts-nocheck
 import { Server } from "socket.io";
-import { ddb, CONVERSATION_TABLE, MESSAGE_TABLE } from "./db/dbClient.js";
-import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { ddb } from "./db/dbClient.js";
+import { ScanCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from "uuid";
+
+export const CONVERSATION_TABLE =
+    process.env.CONVERSATION_TABLE || "Conversations";
+export const MESSAGE_TABLE = process.env.MESSAGE_TABLE || "Messages";
 
 export const initSocket = (server: any) => {
     const io = new Server(server, {
@@ -14,14 +18,13 @@ export const initSocket = (server: any) => {
     io.on("connection", (socket) => {
         console.log("⚡ User connected:", socket.id);
 
-        // Join chat between two users
-        socket.on("joinChat", async (userId1: string, userId2: string) => {
+        socket.on("joinChat", async (userId1, userId2) => {
             try {
                 const room = [userId1, userId2].sort().join("_");
                 socket.join(`chat:${room}`);
                 console.log(`📩 ${userId1} joined chat:${room}`);
 
-                // Check if conversation already exists
+                // Find conversation
                 const scanRes = await ddb.send(
                     new ScanCommand({
                         TableName: CONVERSATION_TABLE,
@@ -39,26 +42,20 @@ export const initSocket = (server: any) => {
                     conversation = scanRes.Items[0];
                     console.log(`🔁 Existing conversation found for ${room}`);
                 } else {
-                    // Create a new conversation
-                    const conversationId = uuidv4();
-                    const createdAt = new Date().toISOString();
+                    // Create new conversation
+                    const newConv = {
+                        _id: uuidv4(),
+                        participants: [userId1, userId2],
+                        createdAt: new Date().toISOString(),
+                    };
 
                     await ddb.send(
                         new PutCommand({
                             TableName: CONVERSATION_TABLE,
-                            Item: {
-                                conversationId,
-                                participants: [userId1, userId2],
-                                createdAt,
-                            },
+                            Item: newConv,
                         })
                     );
-
-                    conversation = {
-                        conversationId,
-                        participants: [userId1, userId2],
-                        createdAt,
-                    };
+                    conversation = newConv;
                     console.log(`🆕 New conversation created for ${room}`);
                 }
 
@@ -69,48 +66,29 @@ export const initSocket = (server: any) => {
             }
         });
 
-        // Send and broadcast messages
+        // Send message
         socket.on(
             "sendMessage",
-            async ({
-                conversationId,
-                senderId,
-                receiverId,
-                content,
-            }: {
-                conversationId: string;
-                senderId: string;
-                receiverId: string;
-                content: string;
-            }) => {
+            async ({ conversationId, senderId, receiverId, content }) => {
                 try {
-                    const messageId = uuidv4();
-                    const createdAt = new Date().toISOString();
-
-                    await ddb.send(
-                        new PutCommand({
-                            TableName: MESSAGE_TABLE,
-                            Item: {
-                                messageId,
-                                conversationId,
-                                senderId,
-                                receiverId,
-                                content,
-                                createdAt,
-                            },
-                        })
-                    );
-
-                    const room = [senderId, receiverId].sort().join("_");
-
-                    io.to(`chat:${room}`).emit("receiveMessage", {
-                        messageId,
+                    const msg = {
+                        _id: uuidv4(),
                         conversationId,
                         senderId,
                         receiverId,
                         content,
-                        createdAt,
-                    });
+                        createdAt: new Date().toISOString(),
+                    };
+
+                    await ddb.send(
+                        new PutCommand({
+                            TableName: MESSAGE_TABLE,
+                            Item: msg,
+                        })
+                    );
+
+                    const room = [senderId, receiverId].sort().join("_");
+                    io.to(`chat:${room}`).emit("receiveMessage", msg);
                 } catch (err) {
                     console.error("❌ Error sending message:", err);
                     socket.emit("error", { message: "Failed to send message" });

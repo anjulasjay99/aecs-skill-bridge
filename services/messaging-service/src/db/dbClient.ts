@@ -4,6 +4,9 @@ import {
     CreateTableCommand,
 } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const client = new DynamoDBClient({
     region: process.env.AWS_REGION || "local",
@@ -16,71 +19,46 @@ const client = new DynamoDBClient({
 
 export const ddb = DynamoDBDocumentClient.from(client);
 
-// ✅ Table names
+// Table names
 export const USER_TABLE = process.env.DYNAMO_TABLE || "Users";
 export const CONVERSATION_TABLE =
     process.env.CONVERSATIONS_TABLE || "Conversations";
-export const MESSAGE_TABLE = process.env.MESSAGES_TABLE || "Messages";
+export const MESSAGE_TABLE = process.env.MESSAGE_TABLE || "Messages";
 
 (async () => {
     const tables = await client.send(new ListTablesCommand({}));
     const existing = tables.TableNames || [];
 
-    // Create Users table (if missing)
-    if (!existing.includes(USER_TABLE)) {
-        console.log(`⚙️ Creating DynamoDB table: ${USER_TABLE}`);
-        await client.send(
-            new CreateTableCommand({
-                TableName: USER_TABLE,
-                AttributeDefinitions: [
-                    { AttributeName: "PK", AttributeType: "S" },
-                    { AttributeName: "SK", AttributeType: "S" },
-                ],
-                KeySchema: [
-                    { AttributeName: "PK", KeyType: "HASH" },
-                    { AttributeName: "SK", KeyType: "RANGE" },
-                ],
-                ProvisionedThroughput: {
-                    ReadCapacityUnits: 5,
-                    WriteCapacityUnits: 5,
-                },
-            })
-        );
-        console.log(`✅ Table ${USER_TABLE} created successfully`);
-    }
-
     // Create Conversations table
     if (!existing.includes(CONVERSATION_TABLE)) {
-        console.log(`⚙️ Creating DynamoDB table: ${CONVERSATION_TABLE}`);
+        console.log("⚙️ Creating DynamoDB table: Conversations");
         await client.send(
             new CreateTableCommand({
-                TableName: CONVERSATION_TABLE,
+                TableName: "Conversations",
                 AttributeDefinitions: [
-                    { AttributeName: "conversationId", AttributeType: "S" },
+                    { AttributeName: "_id", AttributeType: "S" },
                 ],
-                KeySchema: [
-                    { AttributeName: "conversationId", KeyType: "HASH" },
-                ],
+                KeySchema: [{ AttributeName: "_id", KeyType: "HASH" }],
                 ProvisionedThroughput: {
                     ReadCapacityUnits: 5,
                     WriteCapacityUnits: 5,
                 },
             })
         );
-        console.log(`✅ Table ${CONVERSATION_TABLE} created successfully`);
+        console.log("✅ Table Conversations created successfully");
     }
 
     // Create Messages table
     if (!existing.includes(MESSAGE_TABLE)) {
-        console.log(`⚙️ Creating DynamoDB table: ${MESSAGE_TABLE}`);
+        console.log("⚙️ Creating DynamoDB table: Messages");
         await client.send(
             new CreateTableCommand({
-                TableName: MESSAGE_TABLE,
+                TableName: "Messages",
                 AttributeDefinitions: [
-                    { AttributeName: "messageId", AttributeType: "S" },
+                    { AttributeName: "_id", AttributeType: "S" },
                     { AttributeName: "conversationId", AttributeType: "S" },
                 ],
-                KeySchema: [{ AttributeName: "messageId", KeyType: "HASH" }],
+                KeySchema: [{ AttributeName: "_id", KeyType: "HASH" }],
                 GlobalSecondaryIndexes: [
                     {
                         IndexName: "ConversationIndex",
@@ -103,7 +81,7 @@ export const MESSAGE_TABLE = process.env.MESSAGES_TABLE || "Messages";
                 },
             })
         );
-        console.log(`✅ Table ${MESSAGE_TABLE} created successfully`);
+        console.log("✅ Table Messages created successfully");
     }
 
     console.log("✅ DynamoDB setup complete.");
