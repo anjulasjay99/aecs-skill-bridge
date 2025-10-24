@@ -64,6 +64,9 @@ Resources:
                   Value: "1"
                 - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
                   Value: shared
+                # Additional tag for EKS
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: owned
 
     PublicSubnetB:
         Type: AWS::EC2::Subnet
@@ -80,6 +83,9 @@ Resources:
                   Value: "1"
                 - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
                   Value: shared
+                # Additional tag for EKS
+                - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+                  Value: owned
 
     PublicRT:
         Type: AWS::EC2::RouteTable
@@ -136,9 +142,43 @@ Resources:
                   ToPort: 65535
                   SourceSecurityGroupId: !Ref ClusterSecurityGroup
 
+                # Allow inbound traffic from anywhere on port 80 (for NLB)
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 0.0.0.0/0
+
+                # Allow inbound traffic from anywhere on port 443 (for NLB HTTPS)
+                - IpProtocol: tcp
+                  FromPort: 443
+                  ToPort: 443
+                  CidrIp: 0.0.0.0/0
+
             Tags:
                 - Key: Name
                   Value: !Sub "${ProjectName}-eks-node-sg"
+
+    # Allow cluster to communicate with nodes
+    ClusterToNodeIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+            Description: Allow cluster to communicate with nodes
+            GroupId: !Ref NodeSecurityGroup
+            SourceSecurityGroupId: !Ref ClusterSecurityGroup
+            IpProtocol: -1
+            FromPort: 0
+            ToPort: 65535
+
+    # Allow nodes to communicate with cluster
+    NodeToClusterIngress:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+            Description: Allow nodes to communicate with cluster API
+            GroupId: !Ref ClusterSecurityGroup
+            SourceSecurityGroupId: !Ref NodeSecurityGroup
+            IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
 
     # ---------------- IAM for EKS ----------------
     EKSClusterRole:
@@ -187,6 +227,8 @@ Resources:
                     - !Ref PublicSubnetB
                 SecurityGroupIds:
                     - !Ref ClusterSecurityGroup
+                EndpointPublicAccess: true
+                EndpointPrivateAccess: true
 
     EKSNodeGroup:
         Type: AWS::EKS::Nodegroup
@@ -280,6 +322,18 @@ Outputs:
 
     PublicSubnetIds:
         Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+        Export:
+            Name: !Sub "${AWS::StackName}:PublicSubnetIds"
+
+    PublicSubnetAId:
+        Value: !Ref PublicSubnetA
+        Export:
+            Name: !Sub "${AWS::StackName}:PublicSubnetAId"
+
+    PublicSubnetBId:
+        Value: !Ref PublicSubnetB
+        Export:
+            Name: !Sub "${AWS::StackName}:PublicSubnetBId"
 
     ClusterNameOut:
         Value: !Ref ClusterName
@@ -288,6 +342,10 @@ Outputs:
 
     ClusterSecurityGroup:
         Value: !Ref ClusterSecurityGroup
+        Export:
+            Name: !Sub "${AWS::StackName}:ClusterSecurityGroup"
 
     NodeSecurityGroup:
         Value: !Ref NodeSecurityGroup
+        Export:
+            Name: !Sub "${AWS::StackName}:NodeSecurityGroup"
