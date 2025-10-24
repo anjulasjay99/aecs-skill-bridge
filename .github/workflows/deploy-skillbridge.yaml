@@ -85,42 +85,99 @@ jobs:
               run: |
                   echo "🚀 Installing AWS LoadBalancer Controller..."
 
-                  # Update kubeconfig to connect to the cluster
+                  # Update kubeconfig
                   aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
 
+                  # Associate OIDC provider
+                  echo "🔍 Checking OIDC provider..."
                   eksctl utils associate-iam-oidc-provider --cluster $CLUSTER_NAME --region $AWS_REGION --approve
 
+                  # Download and create IAM policy
                   curl -s -o iam-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
-                  aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam-policy.json || echo "ℹ️ Policy already exists."
 
-                  # Create service account with IAM role
                   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy"
+
+                  # Create policy if it doesn't exist
+                  aws iam create-policy \
+                    --policy-name AWSLoadBalancerControllerIAMPolicy \
+                    --policy-document file://iam-policy.json 2>/dev/null || echo "ℹ️ Policy already exists."
+
+                  # Delete existing service account and wait for cleanup
+                  echo "🧹 Cleaning up existing service account..."
+                  eksctl delete iamserviceaccount \
+                    --cluster=$CLUSTER_NAME \
+                    --namespace=kube-system \
+                    --name=aws-load-balancer-controller \
+                    --region $AWS_REGION \
+                    --wait 2>/dev/null || echo "ℹ️ No existing service account"
+
+                  # Wait a moment for cleanup
+                  sleep 10
+
+                  # Create NEW service account with IAM role
+                  echo "🔧 Creating service account with IAM role..."
                   eksctl create iamserviceaccount \
                     --cluster=$CLUSTER_NAME \
                     --namespace=kube-system \
                     --name=aws-load-balancer-controller \
-                    --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy \
-                    --override-existing-serviceaccounts \
+                    --attach-policy-arn=${POLICY_ARN} \
                     --region $AWS_REGION \
                     --approve
 
+                  # Verify service account was created
+                  echo "✅ Verifying service account..."
+                  kubectl get serviceaccount aws-load-balancer-controller -n kube-system
+
+                  # Get VPC ID
                   VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=skillbridge-vpc" --query "Vpcs[0].VpcId" --output text)
                   echo "🧩 VPC detected: $VPC_ID"
 
-                  # Apply CRDs correctly
-                  kubectl apply -f https://raw.githubusercontent.com/aws/eks-charts/master/stable/aws-load-balancer-controller/crds/crds.yaml
+                  # Uninstall existing controller if present
+                  echo "🧹 Removing any existing controller installation..."
+                  helm uninstall aws-load-balancer-controller -n kube-system 2>/dev/null || echo "ℹ️ No existing installation"
 
-                  # Install AWS Load Balancer Controller via Helm
+                  # Wait for cleanup
+                  sleep 5
+
+                  # Apply CRDs
+                  echo "📋 Applying CRDs..."
+                  kubectl apply -k "github.com/aws/eks-charts/stable/aws-load-balancer-controller/crds?ref=master"
+
+                  # Add helm repo
+                  echo "📦 Setting up Helm repository..."
                   helm repo add eks https://aws.github.io/eks-charts
                   helm repo update
 
-                  helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+                  # Install controller
+                  echo "🚀 Installing AWS Load Balancer Controller via Helm..."
+                  helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
                     -n kube-system \
                     --set clusterName=$CLUSTER_NAME \
                     --set serviceAccount.create=false \
                     --set serviceAccount.name=aws-load-balancer-controller \
                     --set region=$AWS_REGION \
                     --set vpcId=$VPC_ID
+
+                  # Wait for deployment to be created
+                  echo "⏳ Waiting for deployment to be created..."
+                  for i in {1..30}; do
+                    if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
+                      echo "✅ Deployment created"
+                      break
+                    fi
+                    echo "🔄 Waiting for deployment... ($i/30)"
+                    sleep 2
+                  done
+
+                  # Wait for controller pods to be ready
+                  echo "⏳ Waiting for controller pods to be ready..."
+                  kubectl wait --for=condition=available --timeout=300s \
+                    deployment/aws-load-balancer-controller -n kube-system
+
+                  # Verify controller is running
+                  echo "🔍 Verifying controller status..."
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
 
                   echo "✅ AWS LoadBalancer Controller installed successfully."
 
@@ -158,23 +215,75 @@ jobs:
                   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
                   REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                   aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${REGISTRY}
+
                   services=( user-service availability-service search-service booking-service payment-service file-service pair-programming-service messaging-service )
-                  for s in "${services[@]}"; do
-                    echo "⚙️ Building image for $s..."
-                    docker build -t ${s}:latest ./services/${s}
-                    docker tag ${s}:latest ${REGISTRY}/${s}:${IMAGE_TAG}
-                    docker tag ${s}:latest ${REGISTRY}/${s}:latest
-                    docker push ${REGISTRY}/${s}:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${s}:latest
-                    echo "✅ $s pushed successfully."
+
+                  for SERVICE in "${services[@]}"; do
+                    echo "🔍 Checking $SERVICE..."
+                    
+                    # Check if image exists in ECR
+                    if aws ecr describe-images --repository-name ${SERVICE} --image-ids imageTag=${IMAGE_TAG} --region ${AWS_REGION} >/dev/null 2>&1; then
+                      echo "📦 Image ${SERVICE}:${IMAGE_TAG} exists in ECR"
+                      
+                      # Image exists, check for code changes
+                      if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                        PREV_COMMIT="HEAD~1"
+                      else
+                        PREV_COMMIT=$(git rev-list --max-parents=0 HEAD)
+                      fi
+                      
+                      if git diff --quiet $PREV_COMMIT HEAD -- services/$SERVICE/; then
+                        echo "⚪ No changes detected in $SERVICE — skipping build."
+                        continue
+                      else
+                        echo "🔄 Code changes detected in $SERVICE — rebuilding..."
+                      fi
+                    else
+                      echo "🆕 Image ${SERVICE}:${IMAGE_TAG} not found in ECR — building..."
+                    fi
+                    
+                    # Build and push
+                    echo "⚙️ Building image for $SERVICE..."
+                    docker build -t ${SERVICE}:latest ./services/${SERVICE}
+                    docker tag ${SERVICE}:latest ${REGISTRY}/${SERVICE}:${IMAGE_TAG}
+                    docker tag ${SERVICE}:latest ${REGISTRY}/${SERVICE}:latest
+                    docker push ${REGISTRY}/${SERVICE}:${IMAGE_TAG}
+                    docker push ${REGISTRY}/${SERVICE}:latest
+                    echo "✅ $SERVICE pushed successfully."
                   done
 
             # 🚀 Deployments
             - name: 🚀 Apply Services & Deployments
               run: |
-                  echo "📦 Applying deployments..."
-                  kubectl apply -f k8s/services-deployments.yaml -n $NAMESPACE
-                  echo "✅ All deployments applied."
+                  echo "📦 Preparing deployments with environment variable substitution..."
+
+                  # Get AWS account ID and region
+                  export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+                  export AWS_REGION="${AWS_REGION}"
+                  export IMAGE_TAG="${IMAGE_TAG}"
+
+                  echo "🔧 AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
+                  echo "🔧 AWS_REGION: $AWS_REGION"
+                  echo "🔧 IMAGE_TAG: $IMAGE_TAG"
+
+                  # Check if envsubst is available, install if not
+                  if ! command -v envsubst &> /dev/null; then
+                    echo "📦 Installing gettext-base for envsubst..."
+                    sudo apt-get update && sudo apt-get install -y gettext-base
+                  fi
+
+                  # Substitute environment variables and apply
+                  echo "🔄 Substituting environment variables in deployments..."
+                  envsubst < k8s/services-deployments.yaml | kubectl apply -f - -n $NAMESPACE
+
+                  echo "✅ All deployments applied with correct image references."
+
+                  # Wait a moment for deployments to be created
+                  sleep 5
+
+                  # Show deployment status
+                  echo "📊 Deployment status:"
+                  kubectl get deployments -n $NAMESPACE
 
             # 🌐 Edge Nginx
             - name: 🌐 Apply Edge NGINX (ConfigMap + Deployment + Service)
@@ -183,6 +292,20 @@ jobs:
                   kubectl apply -f k8s/edge-nginx-configmap.yaml -n $NAMESPACE
                   kubectl apply -f k8s/edge-nginx-deployment.yaml -n $NAMESPACE
                   echo "✅ Edge NGINX applied."
+
+            - name: 🔍 Debug Load Balancer Controller
+              run: |
+                  echo "📋 Checking AWS Load Balancer Controller status..."
+                  kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+                  echo "📜 Controller logs (last 50 lines):"
+                  kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50 || echo "⚠️ Could not fetch logs"
+
+                  echo "🔎 Checking service status:"
+                  kubectl describe svc edge-nginx -n $NAMESPACE
+
+                  echo "📋 Recent events:"
+                  kubectl get events -n $NAMESPACE --sort-by=.metadata.creationTimestamp | tail -n 30
 
             # ⏳ Wait for NLB
             - name: ⏳ Wait for Edge NLB & Capture DNS
@@ -201,7 +324,7 @@ jobs:
                     sleep 10
                   done
 
-                  if [ -z "${{ steps.nlb.outputs.dns }}" ]; then
+                  if [ -z "$(kubectl -n $NAMESPACE get svc edge-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)" ]; then
                     echo "❌ Edge NLB not ready after 10 minutes."
                     echo "🔍 Describing service..."
                     kubectl describe svc edge-nginx -n $NAMESPACE || true
@@ -213,41 +336,81 @@ jobs:
                     exit 1
                   fi
 
-            # 🔗 Resolve ARN
-            - name: 🔗 Resolve NLB ARN from DNS
-              id: nlbarn
+            # 🔗 Resolve Listener ARN
+            - name: 🔗 Resolve NLB Listener ARN from DNS
+              id: nlblistener
               run: |
-                  echo "🔍 Resolving ARN for NLB: ${{ steps.nlb.outputs.dns }}"
-                  ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" --output text)
-                  if [ -z "$ARN" ]; then
-                    echo "❌ Could not resolve NLB ARN."
+                  echo "🔍 Resolving NLB ARN for DNS: ${{ steps.nlb.outputs.dns }}"
+
+                  # Get NLB ARN from DNS name
+                  NLB_ARN=$(aws elbv2 describe-load-balancers \
+                    --query "LoadBalancers[?DNSName=='${{ steps.nlb.outputs.dns }}'].LoadBalancerArn" \
+                    --output text)
+
+                  if [ -z "$NLB_ARN" ]; then
+                    echo "❌ Could not resolve NLB ARN from DNS."
                     exit 1
                   fi
-                  echo "✅ Found NLB ARN: $ARN"
-                  echo "arn=$ARN" >> $GITHUB_OUTPUT
+
+                  echo "✅ Found NLB ARN: $NLB_ARN"
+
+                  # Get Listener ARN from NLB ARN
+                  echo "🔍 Getting Listener ARN for NLB..."
+                  LISTENER_ARN=$(aws elbv2 describe-listeners \
+                    --load-balancer-arn "$NLB_ARN" \
+                    --query "Listeners[0].ListenerArn" \
+                    --output text)
+
+                  if [ -z "$LISTENER_ARN" ] || [ "$LISTENER_ARN" == "None" ]; then
+                    echo "❌ Could not find Listener ARN for NLB."
+                    echo "📋 Available listeners:"
+                    aws elbv2 describe-listeners --load-balancer-arn "$NLB_ARN" || true
+                    exit 1
+                  fi
+
+                  echo "✅ Found Listener ARN: $LISTENER_ARN"
+                  echo "listener_arn=$LISTENER_ARN" >> $GITHUB_OUTPUT
 
             # ☁️ Deploy API Gateway
             - name: ☁️ Deploy Stack B (API Gateway)
               env:
                   DOMAIN_NAME: ${{ secrets.API_DOMAIN_NAME }}
                   CERT_ARN: ${{ secrets.API_DOMAIN_CERT_ARN }}
+                  HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
               run: |
                   echo "🚀 Deploying API Gateway Stack..."
+                  echo "🔧 Using Listener ARN: ${{ steps.nlblistener.outputs.listener_arn }}"
+
                   aws cloudformation deploy \
                     --stack-name $STACK_B \
                     --template-file cloudformation/apigw.yaml \
                     --parameter-overrides \
                       ProjectName=skillbridge \
-                      DomainName=${DOMAIN_NAME} \
+                      CustomDomainName=${DOMAIN_NAME} \
                       CertificateArn=${CERT_ARN} \
-                      EdgeNlbArn=${{ steps.nlbarn.outputs.arn }} \
+                      EdgeNlbListenerArn=${{ steps.nlblistener.outputs.listener_arn }} \
                       StageName=prod \
+                      HostedZoneId=${HOSTED_ZONE_ID} \
                     --no-fail-on-empty-changeset
+
                   echo "✅ API Gateway deployed successfully."
 
             # 📡 Show Endpoint
             - name: 📡 Show API Gateway Endpoint
               run: |
                   echo "🔍 Fetching API Gateway endpoint..."
-                  API=$(aws cloudformation describe-stacks --stack-name $STACK_B --query "Stacks[0].Outputs[?OutputKey=='ApiInvokeUrl'].OutputValue" --output text)
-                  echo "🌐 API Endpoint: $API"
+                  API=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_B \
+                    --query "Stacks[0].Outputs[?OutputKey=='ApiInvokeUrl'].OutputValue" \
+                    --output text)
+
+                  DEFAULT_API=$(aws cloudformation describe-stacks \
+                    --stack-name $STACK_B \
+                    --query "Stacks[0].Outputs[?OutputKey=='ApiDefaultUrl'].OutputValue" \
+                    --output text)
+
+                  echo "✅ Deployment Complete!"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "🌐 Custom Domain API Endpoint: $API"
+                  echo "🔗 Default API Gateway URL: $DEFAULT_API"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
