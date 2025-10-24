@@ -227,6 +227,7 @@ jobs:
                       docker push ${REGISTRY}/${s}:${IMAGE_TAG}
                       docker push ${REGISTRY}/${s}:latest
                       echo "✅ $s pushed successfully."
+                    fi
                   done
 
             # 🚀 Deployments
