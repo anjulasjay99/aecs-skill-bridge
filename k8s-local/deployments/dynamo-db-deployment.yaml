@@ -1,0 +1,61 @@
+# dynamodb-deployment.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: dynamodb-pvc
+spec:
+    accessModes:
+        - ReadWriteOnce
+    resources:
+        requests:
+            storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: dynamodb
+spec:
+    selector:
+        matchLabels:
+            app: dynamodb
+    template:
+        metadata:
+            labels:
+                app: dynamodb
+        spec:
+            containers:
+                - name: dynamodb
+                  image: amazon/dynamodb-local:latest
+                  args:
+                      [
+                          "-jar",
+                          "DynamoDBLocal.jar",
+                          "-sharedDb",
+                          "-dbPath",
+                          "/home/dynamodblocal/data",
+                      ]
+                  ports:
+                      - containerPort: 8000
+                  volumeMounts:
+                      - name: dynamodb-storage
+                        mountPath: /home/dynamodblocal/data
+                  resources:
+                      limits:
+                          memory: "512Mi"
+                          cpu: "500m"
+            volumes:
+                - name: dynamodb-storage
+                  persistentVolumeClaim:
+                      claimName: dynamodb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: dynamodb
+spec:
+    type: ClusterIP
+    selector:
+        app: dynamodb
+    ports:
+        - port: 8000
+          targetPort: 8000

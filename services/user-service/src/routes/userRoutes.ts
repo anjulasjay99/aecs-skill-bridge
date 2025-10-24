@@ -1,100 +1,72 @@
 import { Router } from "express";
-import { authUser, createUser, getUserById } from "../services/userService.js";
 import bcrypt from "bcryptjs";
 import { Role } from "../types/Enums.js";
+import { createUser, authUser, getUserById } from "../services/userService.js";
 import { createMentorProfile } from "../services/mentorService.js";
-import { Types } from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 
-router.get("/:userId", async (_req, res) => {
-    const { userId } = _req.params;
-
+router.get("/:id", async (req, res) => {
     try {
-        const user = await getUserById(userId);
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
-        }
-
-        res.status(200).json({ user });
-    } catch (error: any) {
-        res.status(500).json({ message: error.message });
+        const user = await getUserById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+        res.json({ user });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
     }
 });
 
-router.post("/login", async (_req, res) => {
-    const { email, password } = _req.body;
-
+router.post("/login", async (req, res) => {
+    const { email, password } = req.body;
     try {
         const token = await authUser(email, password);
-        res.status(200).json({
-            message: "Success",
-            token,
-        });
-    } catch (error: any) {
-        res.status(error.statusCode ?? 500).json({
-            message: error.message,
-        });
+        res.status(200).json({ message: "Success", token });
+    } catch (err: any) {
+        res.status(err.statusCode || 500).json({ message: err.message });
     }
 });
 
-router.post("/", async (_req, res) => {
-    const { email, password, firstName, lastName, role } = _req.body;
+router.post("/", async (req, res) => {
+    const { email, password, firstName, lastName, role, mentorProfile } =
+        req.body;
 
     const createdAt = new Date().toISOString();
     const hashedPassword = await bcrypt.hash(password, 10);
 
     try {
+        const _id = uuidv4();
         const user = await createUser({
+            _id,
             email,
             password: hashedPassword,
             firstName,
             lastName,
             role,
+            active: true,
             createdAt,
             updatedAt: createdAt,
-            active: true,
+            userId: email,
         });
 
-        if (role === Role.MENTEE) {
-            res.status(200).json({
-                message: "Successfully created the user",
-                user,
-            });
-        } else {
-            const {
-                designation,
-                bio,
-                domains,
-                yearsOfExperience,
-                hourlyRate,
-                badges,
-                socials,
-            } = _req.body.mentorProfile;
-
-            const mentorProfile = await createMentorProfile({
-                userId: user._id as Types.ObjectId,
-                designation,
-                bio,
-                domains,
-                yearsOfExperience,
-                hourlyRate,
-                badges,
-                socials,
+        if (role === Role.MENTOR && mentorProfile) {
+            const mentorData = await createMentorProfile({
+                _id,
+                userId: email,
+                ...mentorProfile,
                 createdAt,
                 updatedAt: createdAt,
             });
-
-            res.status(200).json({
-                message: "Successfully created the user",
+            return res.json({
+                message: "User + Mentor profile created",
                 user,
-                mentorProfile,
+                mentorData,
             });
         }
-    } catch (error: any) {
-        res.status(error.statusCode).json({
-            message: error.message,
-        });
+
+        res.json({ message: "User created", user });
+    } catch (err: any) {
+        res.status(err.statusCode || 500).json({ message: err.message });
     }
 });
 

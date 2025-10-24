@@ -1,76 +1,187 @@
-import { MentorProfile } from "../models/MentorProfile.js";
-import { User } from "../models/UserModel.js";
-import { Types } from "mongoose";
+// @ts-nocheck
+import { ddb, TABLE_NAME } from "../db/dbClient.js";
+import { ScanCommand } from "@aws-sdk/lib-dynamodb";
 
-// Get mentors with optional filters and pagination
+/**
+ * Search mentors with optional filters and pagination
+ */
 export const searchMentors = async (filters: any) => {
-    const query: any = {};
+    let mentors: any[] = [];
+    let ExclusiveStartKey;
 
-    // --- Filter logic ---
+    // Get all mentor profiles
+    do {
+        const scanResult = await ddb.send(
+            new ScanCommand({
+                TableName: TABLE_NAME,
+                ExclusiveStartKey,
+                FilterExpression: "SK = :sk",
+                ExpressionAttributeValues: {
+                    ":sk": "MENTORPROFILE",
+                },
+            })
+        );
+
+        if (scanResult.Items) mentors.push(...scanResult.Items);
+        ExclusiveStartKey = scanResult.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+
+    // For each mentor, get their user profile and attach userId object
+    for (const mentor of mentors) {
+        const userResult = await ddb.send(
+            new ScanCommand({
+                TableName: TABLE_NAME,
+                FilterExpression: "#id = :idVal AND SK = :sk",
+                ExpressionAttributeNames: {
+                    "#id": "_id",
+                },
+                ExpressionAttributeValues: {
+                    ":idVal": mentor._id,
+                    ":sk": "PROFILE",
+                },
+            })
+        );
+
+        if (userResult.Items && userResult.Items.length > 0) {
+            const user = userResult.Items[0];
+            mentor.userId = {
+                _id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+            };
+        } else {
+            mentor.userId = undefined;
+        }
+    }
+
+    // --- Apply filters (same as before) ---
     if (filters.domains) {
         const domainsArray = filters.domains
             .split(",")
             .map((d: string) => d.trim());
-        query.domains = { $in: domainsArray };
+        mentors = mentors.filter((m) =>
+            m.domains?.some((d: string) => domainsArray.includes(d))
+        );
     }
 
     if (filters.exp) {
-        query.yearsOfExperience = { $gte: Number(filters.exp) };
+        mentors = mentors.filter(
+            (m) => (m.yearsOfExperience ?? 0) >= Number(filters.exp)
+        );
     }
 
     if (filters.badges) {
         const badgesArray = filters.badges
             .split(",")
             .map((b: string) => b.trim());
-        query.badges = { $in: badgesArray };
+        mentors = mentors.filter((m) =>
+            m.badges?.some((b: string) => badgesArray.includes(b))
+        );
     }
 
     if (filters.designation) {
-        query.designation = { $regex: filters.designation, $options: "i" };
+        const regex = new RegExp(filters.designation, "i");
+        mentors = mentors.filter((m) => regex.test(m.designation ?? ""));
     }
 
     if (filters.hourlyRate) {
-        query.hourlyRate = { $lte: Number(filters.hourlyRate) };
+        mentors = mentors.filter(
+            (m) => (m.hourlyRate ?? Infinity) <= Number(filters.hourlyRate)
+        );
     }
 
-    // --- Pagination setup ---
+    // --- Sort and paginate ---
+    mentors.sort((a, b) => {
+        if ((b.yearsOfExperience ?? 0) !== (a.yearsOfExperience ?? 0)) {
+            return (b.yearsOfExperience ?? 0) - (a.yearsOfExperience ?? 0);
+        }
+        return (a.hourlyRate ?? 0) - (b.hourlyRate ?? 0);
+    });
+
     const page = parseInt(filters.page) > 0 ? parseInt(filters.page) : 1;
     const size = parseInt(filters.size) > 0 ? parseInt(filters.size) : 10;
-    const skip = (page - 1) * size;
-
-    // --- Query execution ---
-    const totalMentors = await MentorProfile.countDocuments(query);
-
-    const mentors = await MentorProfile.find(query)
-        .populate({
-            path: "userId",
-            model: User,
-            select: "firstName lastName email role active",
-            match: { active: true },
-        })
-        .sort({ yearsOfExperience: -1, hourlyRate: 1 })
-        .skip(skip)
-        .limit(size);
-
-    // Filter out inactive users
-    const activeMentors = mentors.filter((m) => m.userId);
+    const start = (page - 1) * size;
+    const pagedMentors = mentors.slice(start, start + size);
 
     return {
         page,
         size,
-        totalMentors,
-        totalPages: Math.ceil(totalMentors / size),
-        mentors: activeMentors,
+        totalMentors: mentors.length,
+        totalPages: Math.ceil(mentors.length / size),
+        mentors: pagedMentors,
     };
 };
 
-// Get mentor by ID
+/**
+ * Get single mentor by user _id
+ */
 export const getMentorById = async (mentorId: string) => {
-    return await MentorProfile.findOne({ userId: new Types.ObjectId(mentorId) })
-        .populate({
-            path: "userId",
-            model: User,
-            select: "firstName lastName email role active",
-        })
-        .exec();
+    let mentorProfile = null;
+    let ExclusiveStartKey;
+
+    // Find the mentor profile
+    do {
+        const scanResult = await ddb.send(
+            new ScanCommand({
+                TableName: TABLE_NAME,
+                ExclusiveStartKey,
+                FilterExpression: "#id = :idVal AND SK = :sk",
+                ExpressionAttributeNames: {
+                    "#id": "_id",
+                },
+                ExpressionAttributeValues: {
+                    ":idVal": mentorId,
+                    ":sk": "MENTORPROFILE",
+                },
+            })
+        );
+
+        if (scanResult.Items && scanResult.Items.length > 0) {
+            mentorProfile = scanResult.Items[0];
+            break;
+        }
+
+        ExclusiveStartKey = scanResult.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+
+    if (!mentorProfile) return null;
+
+    // Get user profile for the same _id
+    let userProfile = null;
+    ExclusiveStartKey = undefined;
+
+    do {
+        const scanResult = await ddb.send(
+            new ScanCommand({
+                TableName: TABLE_NAME,
+                ExclusiveStartKey,
+                FilterExpression: "#id = :idVal AND SK = :sk",
+                ExpressionAttributeNames: {
+                    "#id": "_id",
+                },
+                ExpressionAttributeValues: {
+                    ":idVal": mentorId,
+                    ":sk": "PROFILE",
+                },
+            })
+        );
+
+        if (scanResult.Items && scanResult.Items.length > 0) {
+            userProfile = scanResult.Items[0];
+            break;
+        }
+
+        ExclusiveStartKey = scanResult.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+
+    return {
+        ...mentorProfile,
+        userId: userProfile
+            ? {
+                  _id: userProfile._id,
+                  firstName: userProfile.firstName,
+                  lastName: userProfile.lastName,
+              }
+            : undefined,
+    };
 };

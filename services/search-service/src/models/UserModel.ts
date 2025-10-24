@@ -1,7 +1,9 @@
-import { Schema, model, Document } from "mongoose";
+// src/models/UserModel.ts
 import { Role } from "../types/Enums.js";
 
-export interface IUser extends Document {
+export interface IUser {
+    _id?: string;
+    userId: string;
     email: string;
     password: string;
     firstName: string;
@@ -11,43 +13,3 @@ export interface IUser extends Document {
     createdAt: string;
     updatedAt: string;
 }
-
-const UserSchema = new Schema<IUser>({
-    email: {
-        type: String,
-        required: true,
-        index: true,
-    },
-    password: {
-        type: String,
-        trim: true,
-    },
-    firstName: {
-        type: String,
-        trim: true,
-    },
-    lastName: {
-        type: String,
-        trim: true,
-    },
-    role: {
-        type: String,
-        enum: Object.values(Role),
-        required: true,
-        default: Role.MENTEE,
-    },
-    active: {
-        type: Boolean,
-        default: true,
-    },
-    createdAt: {
-        type: String,
-        trim: true,
-    },
-    updatedAt: {
-        type: String,
-        trim: true,
-    },
-});
-
-export const User = model<IUser>("User", UserSchema);

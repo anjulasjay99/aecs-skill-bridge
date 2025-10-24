@@ -486,16 +486,16 @@ const Messages = () => {
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
                             onKeyDown={handleKeyPress}
-                            disabled={
-                                !isConnected ||
-                                !activeConversation ||
-                                activeConversation._id.startsWith("pending-")
-                            }
+                            // disabled={
+                            //     !isConnected ||
+                            //     !activeConversation ||
+                            //     activeConversation._id.startsWith("pending-")
+                            // }
                             className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                         />
                         <button
                             onClick={sendMessage}
-                            disabled={!canSend}
+                            // disabled={!canSend}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                         >
                             Send

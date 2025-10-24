@@ -1,92 +1,138 @@
+// @ts-nocheck
 import { Router } from "express";
-import Conversation from "../models/Conversation.js";
-import Message from "../models/Message.js";
+import { ddb, CONVERSATION_TABLE, MESSAGE_TABLE } from "../db/dbClient.js";
+import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { v4 as uuidv4 } from "uuid";
 
 const router = Router();
 
 /**
  * GET /conversations?participants=user1,user2
- * Fetch conversations (matching one or more participants)
- * and include messages inside each conversation.
+ * Fetch conversations between specified participants
  */
 router.get("/", async (req, res) => {
     try {
         const { participants } = req.query;
+        if (!participants)
+            return res.status(400).json({ message: "Missing participants" });
 
-        if (!participants) {
-            return res
-                .status(400)
-                .json({ message: "Missing participants in query" });
-        }
+        const participantList = participants.split(",").map((p) => p.trim());
 
-        // Parse participants list
-        const participantList = (participants as string)
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean);
-
-        let query = {};
-
-        if (participantList.length === 1) {
-            // return all their conversations
-            query = {
-                participants: participantList[0],
-            };
-        } else {
-            // return only conversations that include *all* and only them
-            query = {
-                participants: { $all: participantList },
-                $expr: {
-                    $eq: [{ $size: "$participants" }, participantList.length],
-                },
-            };
-        }
-
-        const conversations = await Conversation.find(query).lean();
-
-        if (!conversations || conversations.length === 0) {
-            return res.status(200).json({ conversations: [] });
-        }
-
-        // Attach messages
-        const populatedConversations = await Promise.all(
-            conversations.map(async (conv) => {
-                const messages = await Message.find({
-                    conversationId: conv._id,
-                })
-                    .sort({ createdAt: 1 })
-                    .lean();
-                return { ...conv, messages };
-            })
+        // Scan all conversations (for small dataset / local dev)
+        const scanRes = await ddb.send(
+            new ScanCommand({ TableName: CONVERSATION_TABLE })
         );
+        let conversations = scanRes.Items || [];
 
-        res.status(200).json({ conversations: populatedConversations });
-    } catch (error) {
-        console.error("Error fetching conversations:", error);
+        // Filter by exact participants (2-way chat)
+        conversations = conversations.filter((conv) => {
+            const set = new Set(conv.participants);
+            return (
+                participantList.every((p) => set.has(p)) &&
+                set.size === participantList.length
+            );
+        });
+
+        // Attach messages to each conversation
+        const populated = [];
+        for (const conv of conversations) {
+            const msgs = await ddb.send(
+                new QueryCommand({
+                    TableName: MESSAGE_TABLE,
+                    IndexName: "ConversationIndex",
+                    KeyConditionExpression: "conversationId = :cid",
+                    ExpressionAttributeValues: { ":cid": conv.conversationId },
+                })
+            );
+            conv.messages = msgs.Items?.sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            );
+            populated.push(conv);
+        }
+
+        res.status(200).json({ conversations: populated });
+    } catch (err) {
+        console.error("Error fetching conversations:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
 
 /**
- * GET /conversation/:conversationId
- * Fetch all messages for a specific conversation.
+ * GET /conversations/:conversationId
+ * Fetch all messages in a conversation
  */
 router.get("/:conversationId", async (req, res) => {
     try {
         const { conversationId } = req.params;
 
-        const conversation = await Conversation.findById(conversationId).lean();
-        if (!conversation) {
+        // Get conversation
+        const convResult = await ddb.send(
+            new ScanCommand({
+                TableName: CONVERSATION_TABLE,
+                FilterExpression: "conversationId = :cid",
+                ExpressionAttributeValues: { ":cid": conversationId },
+            })
+        );
+
+        if (!convResult.Items?.length)
             return res.status(404).json({ message: "Conversation not found" });
-        }
 
-        const messages = await Message.find({ conversationId })
-            .sort({ createdAt: 1 })
-            .lean();
+        // Get messages
+        const msgResult = await ddb.send(
+            new QueryCommand({
+                TableName: MESSAGE_TABLE,
+                IndexName: "ConversationIndex",
+                KeyConditionExpression: "conversationId = :cid",
+                ExpressionAttributeValues: { ":cid": conversationId },
+            })
+        );
 
-        res.status(200).json({ conversation: { ...conversation, messages } });
-    } catch (error) {
-        console.error("Error fetching conversation messages:", error);
+        const messages = msgResult.Items?.sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+        );
+
+        res.status(200).json({
+            conversation: convResult.Items[0],
+            messages,
+        });
+    } catch (err) {
+        console.error("Error fetching conversation:", err);
+        res.status(500).json({ message: "Internal server error" });
+    }
+});
+
+/**
+ * POST /conversations
+ * Create a new conversation manually (optional)
+ */
+router.post("/", async (req, res) => {
+    try {
+        const { participants } = req.body;
+        if (!participants || participants.length < 2)
+            return res
+                .status(400)
+                .json({ message: "At least two participants are required" });
+
+        const conversationId = uuidv4();
+        const createdAt = new Date().toISOString();
+
+        await ddb.send(
+            new PutCommand({
+                TableName: CONVERSATION_TABLE,
+                Item: {
+                    conversationId,
+                    participants,
+                    createdAt,
+                },
+            })
+        );
+
+        res.status(201).json({
+            message: "Conversation created successfully",
+            conversationId,
+        });
+    } catch (err) {
+        console.error("Error creating conversation:", err);
         res.status(500).json({ message: "Internal server error" });
     }
 });
