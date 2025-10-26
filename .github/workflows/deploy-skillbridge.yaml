@@ -2,7 +2,7 @@ name: 🌩️ Build, Push, Deploy SkillBridge (EKS + API Gateway)
 
 on:
     push:
-        branches: [deploy]
+        branches: [deploy, demo]
     workflow_dispatch:
 
 env:
